@@ -5,7 +5,14 @@ description = "MuJoCo-based Gomoku simulation environment for VLA robot research
 requires-python = ">=3.10"
 dependencies = [
   "mujoco>=3.0",
+  "numpy>=1.23",
+  "Pillow>=10.0",
+  "matplotlib>=3.7",
+  "glfw>=2.6",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.setuptools]
+packages = ["board", "simulation"]

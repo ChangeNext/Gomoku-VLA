@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-os.environ.setdefault("MUJOCO_GL", "egl")
+if sys.platform != "win32":
+    os.environ.setdefault("MUJOCO_GL", "egl")
 
 import mujoco
 import numpy as np
@@ -175,20 +177,44 @@ class GomokuMujocoEnv:
             "  <compiler angle=\"radian\"/>",
             "  <option timestep=\"0.01\" gravity=\"0 0 -9.81\"/>",
             "  <visual>",
-            "    <global offwidth=\"1200\" offheight=\"1200\"/>",
-            "    <headlight diffuse=\"0.8 0.8 0.8\" ambient=\"0.2 0.2 0.2\" specular=\"0.1 0.1 0.1\"/>",
+            "    <global offwidth=\"1400\" offheight=\"1000\"/>",
+            "    <quality shadowsize=\"2048\"/>",
+            "    <headlight diffuse=\"0.55 0.55 0.50\" ambient=\"0.18 0.16 0.14\" specular=\"0.08 0.08 0.08\"/>",
             "  </visual>",
             "  <asset>",
-            "    <material name=\"board_mat\" rgba=\"0.86 0.64 0.36 1\"/>",
-            "    <material name=\"line_mat\" rgba=\"0.08 0.06 0.04 1\"/>",
-            "    <material name=\"robot_white\" rgba=\"0.88 0.90 0.90 1\" specular=\"0.25\" shininess=\"0.55\"/>",
-            "    <material name=\"robot_black\" rgba=\"0.10 0.11 0.12 1\" specular=\"0.18\" shininess=\"0.35\"/>",
-            "    <material name=\"robot_accent\" rgba=\"0.04 0.50 0.72 1\" specular=\"0.25\" shininess=\"0.45\"/>",
+            "    <texture name=\"floor_tex\" type=\"2d\" builtin=\"checker\" width=\"512\" height=\"512\" rgb1=\"0.64 0.58 0.50\" rgb2=\"0.54 0.49 0.43\" mark=\"edge\" markrgb=\"0.47 0.42 0.36\"/>",
+            "    <material name=\"floor_mat\" texture=\"floor_tex\" texrepeat=\"4 4\" rgba=\"1 1 1 1\"/>",
+            "    <material name=\"wall_mat\" rgba=\"0.79 0.76 0.69 1\"/>",
+            "    <material name=\"table_mat\" rgba=\"0.42 0.28 0.17 1\" specular=\"0.18\" shininess=\"0.3\"/>",
+            "    <material name=\"table_edge_mat\" rgba=\"0.22 0.14 0.09 1\"/>",
+            "    <material name=\"board_mat\" rgba=\"0.91 0.67 0.34 1\" specular=\"0.12\" shininess=\"0.25\"/>",
+            "    <material name=\"line_mat\" rgba=\"0.07 0.045 0.025 1\"/>",
+            "    <material name=\"cup_mat\" rgba=\"0.12 0.32 0.40 1\" specular=\"0.2\" shininess=\"0.4\"/>",
+            "    <material name=\"book_mat\" rgba=\"0.58 0.16 0.13 1\"/>",
+            "    <material name=\"robot_white\" rgba=\"0.90 0.91 0.89 1\" specular=\"0.25\" shininess=\"0.55\"/>",
+            "    <material name=\"robot_black\" rgba=\"0.08 0.085 0.09 1\" specular=\"0.18\" shininess=\"0.35\"/>",
+            "    <material name=\"robot_accent\" rgba=\"0.04 0.42 0.62 1\" specular=\"0.25\" shininess=\"0.45\"/>",
+            "    <material name=\"franka_label\" rgba=\"0.03 0.18 0.24 1\"/>",
             "  </asset>",
             "  <worldbody>",
-            "    <light name=\"key\" pos=\"0 -0.45 0.8\" dir=\"0 0 -1\" diffuse=\"0.9 0.9 0.85\" castshadow=\"false\"/>",
+            "    <light name=\"window_key\" pos=\"-0.9 -1.0 1.5\" dir=\"0.45 0.65 -1\" diffuse=\"0.95 0.88 0.76\" castshadow=\"true\"/>",
+            "    <light name=\"room_fill\" pos=\"0.8 0.7 1.1\" dir=\"-0.35 -0.2 -1\" diffuse=\"0.35 0.38 0.42\" castshadow=\"false\"/>",
             f"    <camera name=\"top\" pos=\"0 0 {board_half * 4.7:.5f}\" xyaxes=\"1 0 0 0 1 0\"/>",
-            f"    <camera name=\"iso\" pos=\"{board_half * 2.4:.5f} {-board_half * 2.8:.5f} {board_half * 2.3:.5f}\" xyaxes=\"0.78 0.62 0 -0.36 0.45 0.82\"/>",
+            f"    <camera name=\"iso\" pos=\"{board_half * 2.8:.5f} {-board_half * 3.2:.5f} {board_half * 2.6:.5f}\" xyaxes=\"0.78 0.62 0 -0.36 0.45 0.82\"/>",
+            f"    <camera name=\"robot_full\" pos=\"{board_half * 4.0:.5f} {-board_half * 4.1:.5f} {board_half * 2.8:.5f}\" xyaxes=\"0.72 0.69 0 -0.31 0.32 0.90\"/>",
+            "    <geom name=\"floor\" type=\"plane\" pos=\"0 0 -0.065\" size=\"1.8 1.8 0.02\" material=\"floor_mat\"/>",
+            "    <geom name=\"back_wall\" type=\"box\" pos=\"0 0.78 0.34\" size=\"1.5 0.018 0.42\" material=\"wall_mat\"/>",
+            "    <geom name=\"side_wall\" type=\"box\" pos=\"-0.92 0.05 0.34\" size=\"0.018 1.2 0.42\" material=\"wall_mat\"/>",
+            "    <geom name=\"table_top\" type=\"box\" pos=\"0 0 -0.035\" size=\"0.58 0.48 0.022\" material=\"table_mat\"/>",
+            "    <geom name=\"table_front_edge\" type=\"box\" pos=\"0 -0.495 -0.023\" size=\"0.60 0.012 0.036\" material=\"table_edge_mat\"/>",
+            "    <geom name=\"table_leg_1\" type=\"box\" pos=\"-0.51 -0.41 -0.17\" size=\"0.026 0.026 0.14\" material=\"table_edge_mat\"/>",
+            "    <geom name=\"table_leg_2\" type=\"box\" pos=\"0.51 -0.41 -0.17\" size=\"0.026 0.026 0.14\" material=\"table_edge_mat\"/>",
+            "    <geom name=\"table_leg_3\" type=\"box\" pos=\"-0.51 0.39 -0.17\" size=\"0.026 0.026 0.14\" material=\"table_edge_mat\"/>",
+            "    <geom name=\"table_leg_4\" type=\"box\" pos=\"0.51 0.39 -0.17\" size=\"0.026 0.026 0.14\" material=\"table_edge_mat\"/>",
+            "    <geom name=\"teacup\" type=\"cylinder\" pos=\"-0.39 -0.25 0.008\" size=\"0.035 0.030\" material=\"cup_mat\"/>",
+            "    <geom name=\"cup_handle_top\" type=\"capsule\" fromto=\"-0.360 -0.250 0.032 -0.335 -0.250 0.026\" size=\"0.004\" material=\"cup_mat\"/>",
+            "    <geom name=\"cup_handle_bottom\" type=\"capsule\" fromto=\"-0.360 -0.250 0.008 -0.335 -0.250 0.014\" size=\"0.004\" material=\"cup_mat\"/>",
+            "    <geom name=\"notebook\" type=\"box\" pos=\"-0.37 0.23 -0.001\" size=\"0.075 0.105 0.006\" euler=\"0 0 0.17\" material=\"book_mat\"/>",
             f"    <geom name=\"board\" type=\"box\" pos=\"0 0 0\" size=\"{board_half:.5f} {board_half:.5f} {board_thickness:.5f}\" material=\"board_mat\"/>",
         ]
 
@@ -225,35 +251,39 @@ class GomokuMujocoEnv:
 
     def _robot_xml(self, board_half: float) -> list[str]:
         target_x, target_y, _ = self.board_to_world(*self.selected_cell)
-        base_x = board_half + 0.105
-        base_y = -board_half + 0.060
+        base_x = board_half + 0.155
+        base_y = -board_half + 0.115
         joints = [
-            (base_x, base_y, 0.026),
-            (base_x, base_y, 0.092),
-            (base_x - 0.026, base_y + 0.042, 0.142),
-            (target_x + 0.182, target_y - 0.128, 0.184),
-            (target_x + 0.128, target_y - 0.092, 0.154),
-            (target_x + 0.078, target_y - 0.057, 0.125),
-            (target_x + 0.035, target_y - 0.025, 0.088),
+            (base_x, base_y, 0.000),
+            (base_x, base_y, 0.082),
+            (base_x - 0.038, base_y + 0.060, 0.150),
+            (base_x - 0.094, base_y + 0.126, 0.205),
+            (target_x + 0.168, target_y - 0.124, 0.202),
+            (target_x + 0.118, target_y - 0.085, 0.164),
+            (target_x + 0.066, target_y - 0.046, 0.118),
+            (target_x + 0.024, target_y - 0.018, 0.072),
         ]
         return [
-            f"    <geom name=\"panda_base\" type=\"cylinder\" pos=\"{joints[0][0]:.5f} {joints[0][1]:.5f} {joints[0][2]:.5f}\" size=\"0.04100 0.02600\" material=\"robot_black\"/>",
-            self._capsule("panda_link1", joints[0], joints[1], 0.018, "robot_white"),
-            self._sphere("panda_joint1", joints[1], 0.024, "robot_black"),
-            self._capsule("panda_link2", joints[1], joints[2], 0.016, "robot_white"),
-            self._sphere("panda_joint2", joints[2], 0.022, "robot_black"),
-            self._capsule("panda_link3", joints[2], joints[3], 0.015, "robot_white"),
-            self._sphere("panda_joint3", joints[3], 0.021, "robot_black"),
-            self._capsule("panda_link4", joints[3], joints[4], 0.014, "robot_white"),
-            self._sphere("panda_joint4", joints[4], 0.019, "robot_black"),
-            self._capsule("panda_link5", joints[4], joints[5], 0.012, "robot_white"),
-            self._sphere("panda_joint5", joints[5], 0.017, "robot_black"),
-            self._capsule("panda_link6", joints[5], joints[6], 0.010, "robot_accent"),
-            self._sphere("panda_joint6", joints[6], 0.015, "robot_black"),
-            self._capsule("panda_link7", joints[6], (target_x, target_y, 0.053), 0.007, "robot_black"),
-            f"    <geom name=\"panda_hand\" type=\"box\" pos=\"{target_x:.5f} {target_y:.5f} 0.05200\" size=\"0.02000 0.01000 0.00600\" material=\"robot_black\"/>",
-            f"    <geom name=\"panda_finger_left\" type=\"box\" pos=\"{target_x - 0.012:.5f} {target_y:.5f} 0.03800\" size=\"0.00400 0.01500 0.01100\" material=\"robot_black\"/>",
-            f"    <geom name=\"panda_finger_right\" type=\"box\" pos=\"{target_x + 0.012:.5f} {target_y:.5f} 0.03800\" size=\"0.00400 0.01500 0.01100\" material=\"robot_black\"/>",
+            f"    <geom name=\"panda_base\" type=\"cylinder\" pos=\"{base_x:.5f} {base_y:.5f} 0.00000\" size=\"0.05500 0.03500\" material=\"robot_black\"/>",
+            f"    <geom name=\"panda_pedestal\" type=\"cylinder\" pos=\"{base_x:.5f} {base_y:.5f} 0.04600\" size=\"0.04300 0.04600\" material=\"robot_white\"/>",
+            self._capsule("panda_link1", joints[1], joints[2], 0.020, "robot_white"),
+            self._sphere("panda_joint1", joints[1], 0.026, "robot_black"),
+            self._capsule("panda_link2", joints[2], joints[3], 0.018, "robot_white"),
+            self._sphere("panda_joint2", joints[2], 0.024, "robot_black"),
+            self._capsule("panda_link3", joints[3], joints[4], 0.017, "robot_white"),
+            self._sphere("panda_joint3", joints[3], 0.023, "robot_black"),
+            self._capsule("panda_link4", joints[4], joints[5], 0.015, "robot_white"),
+            self._sphere("panda_joint4", joints[4], 0.021, "robot_black"),
+            self._capsule("panda_link5", joints[5], joints[6], 0.013, "robot_white"),
+            self._sphere("panda_joint5", joints[5], 0.019, "robot_black"),
+            self._capsule("panda_link6", joints[6], joints[7], 0.011, "robot_accent"),
+            self._sphere("panda_joint6", joints[6], 0.017, "robot_black"),
+            self._capsule("panda_link7", joints[7], (target_x, target_y, 0.056), 0.008, "robot_black"),
+            self._sphere("panda_joint7", joints[7], 0.015, "robot_black"),
+            f"    <geom name=\"franka_badge\" type=\"box\" pos=\"{base_x + 0.000:.5f} {base_y - 0.044:.5f} 0.07000\" size=\"0.02800 0.00200 0.00800\" material=\"franka_label\"/>",
+            f"    <geom name=\"panda_hand\" type=\"box\" pos=\"{target_x:.5f} {target_y:.5f} 0.05200\" size=\"0.02300 0.01100 0.00700\" material=\"robot_black\"/>",
+            f"    <geom name=\"panda_finger_left\" type=\"box\" pos=\"{target_x - 0.014:.5f} {target_y:.5f} 0.03800\" size=\"0.00450 0.01700 0.01200\" material=\"robot_black\"/>",
+            f"    <geom name=\"panda_finger_right\" type=\"box\" pos=\"{target_x + 0.014:.5f} {target_y:.5f} 0.03800\" size=\"0.00450 0.01700 0.01200\" material=\"robot_black\"/>",
         ]
 
     def _capsule(

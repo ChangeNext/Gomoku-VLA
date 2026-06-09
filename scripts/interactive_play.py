@@ -25,12 +25,12 @@ class InteractiveGomokuApp:
             figsize=(13, 6.8),
             gridspec_kw={"width_ratios": [1.0, 1.25]},
         )
-        self.fig.patch.set_facecolor("#f4f1ea")
+        self.fig.patch.set_facecolor("#d8d1c4")
         self.fig.subplots_adjust(left=0.045, right=0.985, bottom=0.11, top=0.93, wspace=0.08)
-        self.fig.canvas.manager.set_window_title("Gomoku-VLA Interactive MuJoCo")
+        self.fig.canvas.manager.set_window_title("Gomoku-VLA Human Play + Franka View")
         self.status = self.fig.text(0.045, 0.045, "", ha="left", va="center", fontsize=11)
         reset_ax = self.fig.add_axes((0.875, 0.027, 0.095, 0.045))
-        self.reset_button = Button(reset_ax, "Reset", color="#e5dfd2", hovercolor="#d8cfbd")
+        self.reset_button = Button(reset_ax, "Reset", color="#ece6dc", hovercolor="#d9cdbc")
         self.reset_button.on_clicked(self.on_reset)
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
         self.draw()
@@ -70,7 +70,7 @@ class InteractiveGomokuApp:
     def draw_clickable_board(self) -> None:
         board = self.env.board
         self.board_ax.clear()
-        self.board_ax.set_title("Human board input", fontsize=13, pad=10)
+        self.board_ax.set_title("Player Board", fontsize=13, pad=10)
         self.board_ax.set_xlim(-0.5, board.size - 0.5)
         self.board_ax.set_ylim(-0.5, board.size - 0.5)
         self.board_ax.set_aspect("equal")
@@ -78,11 +78,11 @@ class InteractiveGomokuApp:
         self.board_ax.set_yticks(range(board.size))
         self.board_ax.set_xticklabels([str(idx) for idx in range(board.size)], fontsize=8)
         self.board_ax.set_yticklabels([str(board.size - 1 - idx) for idx in range(board.size)], fontsize=8)
-        self.board_ax.grid(color="#222222", linewidth=1.0)
-        self.board_ax.set_facecolor("#e7b264")
+        self.board_ax.grid(color="#2a2118", linewidth=1.0)
+        self.board_ax.set_facecolor("#d49a4a")
         for spine in self.board_ax.spines.values():
             spine.set_linewidth(1.6)
-            spine.set_color("#19140c")
+            spine.set_color("#20150d")
 
         for row, values in enumerate(board.grid):
             for col, value in enumerate(values):
@@ -95,8 +95,8 @@ class InteractiveGomokuApp:
 
     def draw_mujoco_render(self) -> None:
         self.render_ax.clear()
-        self.render_ax.set_title("MuJoCo Panda-like robot + board", fontsize=13, pad=10)
-        self.render_ax.imshow(self.env.render(width=900, height=720, camera="iso"))
+        self.render_ax.set_title("Franka Robot View", fontsize=13, pad=10)
+        self.render_ax.imshow(self.env.render(width=980, height=720, camera="robot_full"))
         self.render_ax.axis("off")
 
 
