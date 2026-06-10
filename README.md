@@ -11,6 +11,14 @@ MuJoCo 기반 오목 보드게임 로봇 시스템을 위한 초기 MVP입니다
 
 ## 실행
 
+팝업에서 흑/백을 선택하고 클릭 UI로 플레이하려면:
+
+```bash
+python -m scripts.interactive_play
+```
+
+사람이 클릭해서 둔 수는 로봇팔 target을 갱신하지 않고, 로봇 차례의 수만 로봇팔 target을 갱신한다.
+
 MuJoCo viewer 중심으로 보려면:
 
 ```bash

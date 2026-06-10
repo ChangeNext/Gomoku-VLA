@@ -11,6 +11,19 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         self.assertGreater(env.model.ngeom, 0)
         self.assertEqual(env.robot_target_cell, (7, 7))
 
+    def test_human_move_can_skip_robot_target_update(self) -> None:
+        env = GomokuMujocoEnv()
+        env.step((7, 7), update_robot_target=True)
+        env.step((7, 8), update_robot_target=False)
+        self.assertEqual(env.board.grid[7][8], 2)
+        self.assertEqual(env.robot_target_cell, (7, 7))
+
+    def test_first_human_move_keeps_robot_without_target(self) -> None:
+        env = GomokuMujocoEnv()
+        env.step((7, 7), update_robot_target=False)
+        self.assertEqual(env.board.grid[7][7], 1)
+        self.assertIsNone(env.robot_target_cell)
+
     def test_coordinate_round_trip(self) -> None:
         env = GomokuMujocoEnv()
         x, y, _ = env.board_to_world(3, 11)

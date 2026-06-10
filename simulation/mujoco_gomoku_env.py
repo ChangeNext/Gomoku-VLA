@@ -50,14 +50,16 @@ class GomokuMujocoEnv:
         self._reset_runtime_geoms()
         mujoco.mj_forward(self.model, self.data)
 
-    def step(self, action: tuple[int, int]) -> dict[str, object]:
+    def step(self, action: tuple[int, int], update_robot_target: bool = True) -> dict[str, object]:
         row, col = action
         winner = self.board.place(row, col)
         self.selected_cell = (row, col)
-        self.robot_target_cell = (row, col)
+        if update_robot_target:
+            self.robot_target_cell = (row, col)
         self._set_stone_geom(row, col, Player(self.board.grid[row][col]))
         self._update_cursor_geom()
-        self._update_hand_geoms()
+        if update_robot_target:
+            self._update_hand_geoms()
         mujoco.mj_forward(self.model, self.data)
         return {
             "board": self.board.copy_state(),
@@ -67,8 +69,8 @@ class GomokuMujocoEnv:
             "move_count": self.board.move_count,
         }
 
-    def place_selected(self) -> dict[str, object]:
-        return self.step(self.selected_cell)
+    def place_selected(self, update_robot_target: bool = True) -> dict[str, object]:
+        return self.step(self.selected_cell, update_robot_target=update_robot_target)
 
     def move_selection(self, d_row: int, d_col: int) -> tuple[int, int]:
         row, col = self.selected_cell
@@ -148,14 +150,20 @@ class GomokuMujocoEnv:
         self.model.geom_rgba[geom_id] = rgba
 
     def _update_hand_geoms(self) -> None:
-        row, col = self.robot_target_cell or self.selected_cell
-        x, y, _ = self.board_to_world(row, col)
+        if self.robot_target_cell is None:
+            x, y, _ = self._robot_home_world()
+        else:
+            x, y, _ = self.board_to_world(*self.robot_target_cell)
         hand_id = self._geom_ids["panda_hand"]
         left_id = self._geom_ids["panda_finger_left"]
         right_id = self._geom_ids["panda_finger_right"]
         self.model.geom_pos[hand_id] = np.array([x, y, 0.052], dtype=float)
         self.model.geom_pos[left_id] = np.array([x - 0.012, y, 0.038], dtype=float)
         self.model.geom_pos[right_id] = np.array([x + 0.012, y, 0.038], dtype=float)
+
+    def _robot_home_world(self) -> tuple[float, float, float]:
+        board_half = self.board_extent / 2.0 + self.cell_size * 0.7
+        return board_half + 0.030, -board_half - 0.030, 0.0
 
     def _set_stone_geom(self, row: int, col: int, player: Player) -> None:
         geom_id = self._geom_ids[f"stone_{row}_{col}"]
@@ -250,7 +258,7 @@ class GomokuMujocoEnv:
         return "\n".join(xml_parts)
 
     def _robot_xml(self, board_half: float) -> list[str]:
-        target_x, target_y, _ = self.board_to_world(*self.selected_cell)
+        target_x, target_y, _ = self._robot_home_world()
         base_x = board_half + 0.155
         base_y = -board_half + 0.115
         joints = [

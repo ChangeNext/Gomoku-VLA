@@ -10,6 +10,7 @@
 - robot view: MuJoCo 렌더 기반 Franka 전체 뷰
 - board/world 좌표 변환 제공
 - 착수 시 모델 재생성 없이 stone rgba, cursor, gripper 위치를 갱신
+- 사람 착수는 gripper 위치를 유지하고, 로봇 착수만 gripper target을 갱신
 - `top`, `iso`, `robot_full` camera 지원
 
 ## Scene Design
