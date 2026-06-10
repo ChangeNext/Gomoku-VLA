@@ -19,8 +19,11 @@
 
 ## 4. Learning-based Move Policy
 
-- self-play episode logging
-- black/white DQN 분리 학습
+- AlphaZero-style board-only self-play scaffold
+- policy/value model interface
+- MCTS visit distribution을 policy target으로 저장
+- replay buffer와 PyTorch policy/value trainer
+- checkpoint evaluator와 best-model promotion 추가 예정
 
 ## 5. VLA-based Manipulation
 

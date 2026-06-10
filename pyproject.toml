@@ -11,8 +11,13 @@ dependencies = [
   "glfw>=2.6",
 ]
 
+[project.optional-dependencies]
+learning = [
+  "torch>=2.0",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
 [tool.setuptools]
-packages = ["board", "simulation"]
+packages = ["board", "simulation", "gomoku_ai"]
