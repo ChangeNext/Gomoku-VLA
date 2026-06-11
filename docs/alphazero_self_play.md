@@ -42,6 +42,35 @@ python -m scripts.train_alphazero \
 
 This writes `checkpoints/alphazero_latest.pt` by default. Use small boards and low simulation counts for pipeline checks; use larger boards, more self-play games, and more MCTS simulations only after the loop is stable.
 
+Continue training from an existing checkpoint:
+
+```bash
+python -m scripts.train_alphazero \
+  --board-size 9 \
+  --win-length 5 \
+  --iterations 12 \
+  --games 30 \
+  --simulations 96 \
+  --epochs 8 \
+  --batches-per-epoch 64 \
+  --batch-size 256 \
+  --device cuda \
+  --initial-checkpoint checkpoints/alphazero_9x9_mid.pt \
+  --checkpoint checkpoints/alphazero_9x9_long.pt
+```
+
+Training uses random rotation/flip augmentation by default so each sampled batch sees board-equivalent positions in different orientations. `--epochs` controls passes through the training loop, and `--batches-per-epoch` controls how many replay batches are sampled per epoch. Use `--no-augment` only for debugging exact sample contents.
+
+Play against a trained checkpoint:
+
+```bash
+python -m scripts.play_ai_cli \
+  --checkpoint checkpoints/alphazero_9x9_long.pt \
+  --simulations 32
+```
+
+Use `--human white` to let the AI play the first move as black. The CLI reads the board size from the checkpoint and uses `--win-length 5` by default.
+
 Run all tests:
 
 ```bash

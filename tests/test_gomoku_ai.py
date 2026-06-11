@@ -14,6 +14,7 @@ from gomoku_ai import (
     legal_action_mask,
     run_mcts,
 )
+from gomoku_ai.replay_buffer import augment_state_policy
 from gomoku_ai.torch_model import GomokuPolicyValueNet
 from gomoku_ai.train import train_epochs
 
@@ -71,8 +72,29 @@ class GomokuAITest(unittest.TestCase):
         replay.add_game(samples)
         network = GomokuPolicyValueNet(board_size=5, channels=8)
         optimizer = torch.optim.Adam(network.parameters(), lr=1e-3)
-        loss = train_epochs(network, optimizer, replay, epochs=1, batch_size=4, device=torch.device("cpu"))
+        loss = train_epochs(
+            network,
+            optimizer,
+            replay,
+            epochs=1,
+            batches_per_epoch=1,
+            batch_size=4,
+            device=torch.device("cpu"),
+        )
         self.assertGreater(loss, 0.0)
+
+    def test_augmentation_preserves_state_policy_alignment(self) -> None:
+        state = np.zeros((3, 3, 3), dtype=np.float32)
+        state[0, 0, 1] = 1.0
+        policy = np.zeros(9, dtype=np.float32)
+        policy[action_to_index(0, 1, 3)] = 1.0
+
+        for _ in range(20):
+            augmented_state, augmented_policy = augment_state_policy(state, policy)
+            state_position = np.argwhere(augmented_state[0] == 1.0)
+            policy_position = np.argwhere(augmented_policy.reshape(3, 3) == 1.0)
+            self.assertEqual(state_position.tolist(), policy_position.tolist())
+            self.assertAlmostEqual(float(augmented_policy.sum()), 1.0)
 
 
 if __name__ == "__main__":
