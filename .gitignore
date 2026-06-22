@@ -3,7 +3,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 *.egg-info/
-checkpoints/
+gomoku_ai/checkpoints/
+gomoku_ai/logs/
+gomoku_ai/plots/
+gomoku_ai/runs/
 
 gomoku_snapshot.ppm
 gomoku_snapshot.png

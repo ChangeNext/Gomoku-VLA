@@ -16,6 +16,9 @@ class MCTSConfig:
     simulations: int = 64
     c_puct: float = 1.5
     temperature: float = 1.0
+    root_dirichlet_alpha: float = 0.3
+    root_exploration_fraction: float = 0.25
+    add_root_noise: bool = False
 
 
 @dataclass
@@ -37,6 +40,8 @@ def run_mcts(board: GomokuBoard, model: PolicyValueModel, config: MCTSConfig | N
     root = Node(prior=1.0)
     root_board = clone_board(board)
     _expand(root, root_board, model)
+    if config.add_root_noise:
+        _add_root_dirichlet_noise(root, config)
 
     for _ in range(config.simulations):
         search_board = clone_board(board)
@@ -46,6 +51,16 @@ def run_mcts(board: GomokuBoard, model: PolicyValueModel, config: MCTSConfig | N
     for action_index, child in root.children.items():
         visits[action_index] = child.visit_count
     return _visits_to_policy(visits, legal_action_mask(board), config.temperature)
+
+
+def _add_root_dirichlet_noise(root: Node, config: MCTSConfig) -> None:
+    if not root.children:
+        return
+    actions = list(root.children)
+    noise = np.random.dirichlet([config.root_dirichlet_alpha] * len(actions))
+    for action_index, noise_value in zip(actions, noise):
+        child = root.children[action_index]
+        child.prior = (1.0 - config.root_exploration_fraction) * child.prior + config.root_exploration_fraction * float(noise_value)
 
 
 def _search(node: Node, board: GomokuBoard, model: PolicyValueModel, config: MCTSConfig) -> float:

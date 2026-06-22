@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import random
+import pickle
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 import numpy as np
@@ -27,6 +29,25 @@ class ReplayBuffer:
 
     def add_game(self, samples: Iterable[SelfPlaySample]) -> None:
         self._samples.extend(samples)
+
+    def save(self, path: str | Path) -> None:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with Path(path).open("wb") as replay_file:
+            pickle.dump(
+                {
+                    "capacity": self.capacity,
+                    "samples": list(self._samples),
+                },
+                replay_file,
+            )
+
+    @classmethod
+    def load(cls, path: str | Path) -> "ReplayBuffer":
+        with Path(path).open("rb") as replay_file:
+            data = pickle.load(replay_file)
+        replay = cls(capacity=int(data["capacity"]))
+        replay.add_game(data["samples"])
+        return replay
 
     def sample(self, batch_size: int, augment: bool = True) -> TrainingBatch:
         if not self._samples:

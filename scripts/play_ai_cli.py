@@ -85,8 +85,11 @@ def play_game(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Play against a trained Gomoku policy/value checkpoint.")
-    parser.add_argument("--checkpoint", default="checkpoints/alphazero_9x9_mid.pt")
+    parser.add_argument("--checkpoint", default="gomoku_ai/runs/alphazero_9x9_long/checkpoints/latest.pt")
     parser.add_argument("--win-length", type=int, default=5)
+    parser.add_argument("--rule-set", choices=("free", "renju"), help="Defaults to the checkpoint rule_set metadata.")
+    parser.add_argument("--center-opening", action="store_true", help="Force the first black move to the center.")
+    parser.add_argument("--no-center-opening", action="store_true", help="Disable checkpoint center-opening metadata.")
     parser.add_argument("--simulations", type=int, default=32)
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, or another torch device")
     parser.add_argument("--human", choices=("black", "white"), default="black")
@@ -99,7 +102,18 @@ def main() -> None:
     device = resolve_device(args.device)
     network = load_checkpoint(checkpoint_path, device=device)
     model = TorchPolicyValueModel(network, device=device)
-    board = GomokuBoard(size=network.board_size, win_length=args.win_length)
+    rule_set = args.rule_set or network.rule_set
+    enforce_center_opening = network.enforce_center_opening
+    if args.center_opening:
+        enforce_center_opening = True
+    if args.no_center_opening:
+        enforce_center_opening = False
+    board = GomokuBoard(
+        size=network.board_size,
+        win_length=args.win_length,
+        rule_set=rule_set,
+        enforce_center_opening=enforce_center_opening,
+    )
     human_player = Player.BLACK if args.human == "black" else Player.WHITE
     print(f"Loaded {checkpoint_path} on {device}")
     play_game(board, model, human_player, simulations=args.simulations)
