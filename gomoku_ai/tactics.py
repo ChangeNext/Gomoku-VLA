@@ -8,7 +8,7 @@ from .encoding import clone_board
 def find_immediate_win(board: GomokuBoard, player: Player) -> tuple[int, int] | None:
     if board.winner is not None:
         return None
-    for row, col in board.legal_moves():
+    for row, col in _legal_moves_for_player(board, player):
         candidate = clone_board(board)
         candidate.current_player = player
         if candidate.place(row, col) == player:
@@ -39,7 +39,7 @@ def select_tactical_move(board: GomokuBoard) -> tuple[int, int] | None:
 def find_best_threat_move(board: GomokuBoard, player: Player) -> tuple[int, int] | None:
     best_move: tuple[int, int] | None = None
     best_score = 0
-    for row, col in board.legal_moves():
+    for row, col in _legal_moves_for_player(board, player):
         score = _threat_score_after_move(board, row, col, player)
         if score > best_score:
             best_score = score
@@ -50,7 +50,10 @@ def find_best_threat_move(board: GomokuBoard, player: Player) -> tuple[int, int]
 def _threat_score_after_move(board: GomokuBoard, row: int, col: int, player: Player) -> int:
     candidate = clone_board(board)
     candidate.current_player = player
-    candidate.place(row, col)
+    try:
+        candidate.place(row, col)
+    except ValueError:
+        return 0
     open_fours = 0
     closed_fours = 0
     open_threes = 0
@@ -105,3 +108,9 @@ def _count_side(
         row += dr
         col += dc
     return count, board.is_on_board(row, col) and board.grid[row][col] == Player.EMPTY.value
+
+
+def _legal_moves_for_player(board: GomokuBoard, player: Player) -> list[tuple[int, int]]:
+    candidate = clone_board(board)
+    candidate.current_player = player
+    return candidate.legal_moves()

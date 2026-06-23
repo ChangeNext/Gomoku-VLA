@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from board import GomokuBoard
+from board import GomokuBoard, Player
 from gomoku_ai import (
     MCTSConfig,
     ReplayBuffer,
@@ -196,6 +196,15 @@ class GomokuAITest(unittest.TestCase):
             if col < 2:
                 blocking_board.place(1, col)
         self.assertEqual(select_tactical_move(blocking_board), (0, 3))
+
+    def test_tactical_move_skips_renju_forbidden_opponent_moves(self) -> None:
+        board = GomokuBoard(rule_set="renju")
+        board.current_player = Player.WHITE
+        for row, col in ((7, 6), (7, 8), (6, 7), (8, 7)):
+            board.grid[row][col] = 1
+            board.move_count += 1
+
+        self.assertNotEqual(select_tactical_move(board), (7, 7))
 
     def test_evaluator_game_runs_between_checkpoints(self) -> None:
         candidate = GomokuPolicyValueNet(board_size=3, channels=4, res_blocks=1)
