@@ -43,6 +43,7 @@ def main() -> None:
     parser.add_argument("--evaluation-simulations", type=int, default=64)
     parser.add_argument("--promotion-threshold", type=float, default=0.55)
     parser.add_argument("--evaluation-seed", type=int, default=0)
+    parser.add_argument("--no-progress", action="store_true", help="Disable tqdm progress bars.")
     args = parser.parse_args()
 
     history = run_training(
@@ -83,6 +84,7 @@ def main() -> None:
             evaluation_simulations=args.evaluation_simulations,
             promotion_threshold=args.promotion_threshold,
             evaluation_seed=args.evaluation_seed,
+            show_progress=not args.no_progress,
         )
     )
     for item in history:

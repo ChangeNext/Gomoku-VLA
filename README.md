@@ -74,6 +74,8 @@ python -m scripts.render_snapshot
 pip install -e ".[learning]"
 ```
 
+학습 중에는 `tqdm`으로 전체 iteration, self-play game, optimization batch, evaluator game 진행률과 ETA를 표시한다. 로그 파일처럼 progress bar가 필요 없는 실행에서는 `--no-progress`를 사용한다.
+
 짧은 smoke training:
 
 ```bash

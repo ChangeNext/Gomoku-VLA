@@ -31,6 +31,8 @@ gomoku_ai/runs/<run-name>/
 
 `history.csv` records total loss, policy loss, value loss, target entropy, replay size, samples added, and optional evaluator promotion metrics. `policy_heatmap_empty.png` visualizes the network's current empty-board move prior, which is useful for spotting obvious policy collapse or center/corner bias. `replay_buffer.pkl` lets a run resume without throwing away self-play data.
 
+The trainer displays nested `tqdm` progress bars for iterations, self-play games, optimization batches, and evaluator games. The top-level bar reports the latest loss, replay size, and evaluator score. Use `--no-progress` for redirected logs or non-interactive jobs.
+
 ## Interpreting Metrics
 
 Training loss is not a fixed validation loss. The target distribution changes because every iteration creates new self-play data. Use it as a stability signal, not as the only strength measure.

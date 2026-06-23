@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
+from tqdm.auto import trange
 
 from board import GomokuBoard, Player
 
@@ -62,6 +63,7 @@ class AlphaZeroTrainingConfig:
     evaluation_simulations: int = 64
     promotion_threshold: float = 0.55
     evaluation_seed: int = 0
+    show_progress: bool = True
 
 
 @dataclass(frozen=True)
@@ -116,10 +118,25 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
     history = read_training_history_csv(run_paths.history_csv_path) if config.resume_run else []
     start_iteration = int(history[-1]["iteration"]) if history else 0
 
-    for iteration in range(1, config.iterations + 1):
+    iteration_bar = trange(
+        1,
+        config.iterations + 1,
+        desc="Training iterations",
+        unit="iter",
+        disable=_progress_disabled(config.show_progress),
+    )
+    for iteration in iteration_bar:
         global_iteration = start_iteration + iteration
         samples_added = 0
-        for _ in range(config.games_per_iteration):
+        game_bar = trange(
+            config.games_per_iteration,
+            desc=f"Self-play iter {global_iteration}",
+            unit="game",
+            leave=False,
+            position=1,
+            disable=_progress_disabled(config.show_progress),
+        )
+        for _ in game_bar:
             samples = generate_self_play_game(
                 model,
                 SelfPlayConfig(
@@ -140,6 +157,7 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
             )
             replay.add_game(samples)
             samples_added += len(samples)
+            game_bar.set_postfix(samples=samples_added, replay=len(replay), refresh=False)
 
         metrics = train_epoch_metrics(
             network,
@@ -152,6 +170,8 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
             augment=config.augment_batches,
             gradient_clip_norm=config.gradient_clip_norm,
             use_amp=config.use_amp,
+            show_progress=config.show_progress,
+            progress_desc=f"Optimize iter {global_iteration}",
         )
         save_checkpoint(
             network,
@@ -209,6 +229,13 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
             config.rule_set,
             config.enforce_center_opening,
         )
+        progress_metrics = {
+            "loss": f"{metrics['loss']:.4f}",
+            "replay": len(replay),
+        }
+        if "evaluation_candidate_score" in metrics:
+            progress_metrics["eval"] = f"{float(metrics['evaluation_candidate_score']):.3f}"
+        iteration_bar.set_postfix(progress_metrics, refresh=True)
 
     return history
 
@@ -246,7 +273,16 @@ def evaluate_for_promotion(
     rng = random.Random(config.evaluation_seed)
     score = {"candidate": 0, "baseline": 0, "draw": 0}
     total_moves = 0
-    for game in range(1, config.evaluation_games + 1):
+    evaluation_bar = trange(
+        1,
+        config.evaluation_games + 1,
+        desc="Evaluate candidate",
+        unit="game",
+        leave=False,
+        position=1,
+        disable=_progress_disabled(config.show_progress),
+    )
+    for game in evaluation_bar:
         winner, moves = play_evaluation_game(
             candidate,
             baseline,
@@ -260,6 +296,12 @@ def evaluate_for_promotion(
         )
         score[winner] += 1
         total_moves += moves
+        evaluation_bar.set_postfix(
+            candidate=score["candidate"],
+            baseline=score["baseline"],
+            draws=score["draw"],
+            refresh=False,
+        )
 
     candidate_score = score["candidate"] + 0.5 * score["draw"]
     evaluation_score = candidate_score / float(config.evaluation_games)
@@ -468,6 +510,7 @@ def train_epochs(
     augment: bool = True,
     gradient_clip_norm: float = 5.0,
     use_amp: bool = False,
+    show_progress: bool = True,
 ) -> float:
     return train_epoch_metrics(
         network,
@@ -480,6 +523,7 @@ def train_epochs(
         augment=augment,
         gradient_clip_norm=gradient_clip_norm,
         use_amp=use_amp,
+        show_progress=show_progress,
     )["loss"]
 
 
@@ -494,6 +538,8 @@ def train_epoch_metrics(
     augment: bool = True,
     gradient_clip_norm: float = 5.0,
     use_amp: bool = False,
+    show_progress: bool = True,
+    progress_desc: str = "Optimize",
 ) -> dict[str, float]:
     if len(replay) == 0:
         raise ValueError("replay buffer is empty")
@@ -508,31 +554,49 @@ def train_epoch_metrics(
     network.train()
     amp_enabled = use_amp and device.type == "cuda"
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
-    for _ in range(epochs):
-        for _ in range(batches_per_epoch):
-            batch = replay.sample(batch_size, augment=augment)
-            states = torch.from_numpy(batch.states).to(device)
-            policy_targets = torch.from_numpy(batch.policy_targets).to(device)
-            value_targets = torch.from_numpy(batch.value_targets).to(device)
-            optimizer.zero_grad()
-            with torch.cuda.amp.autocast(enabled=amp_enabled):
-                policy_logits, values = network(states)
-                policy_loss, value_loss = policy_value_loss_components(policy_logits, values, policy_targets, value_targets)
-                loss = policy_loss + value_loss
-            scaler.scale(loss).backward()
-            if gradient_clip_norm > 0:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(network.parameters(), gradient_clip_norm)
-            scaler.step(optimizer)
-            scaler.update()
-            losses.append(float(loss.item()))
-            policy_losses.append(float(policy_loss.item()))
-            value_losses.append(float(value_loss.item()))
-            target_entropy = -(policy_targets * torch.log(policy_targets.clamp_min(1e-8))).sum(dim=1).mean()
-            policy_target_entropies.append(float(target_entropy.item()))
+    total_steps = epochs * batches_per_epoch
+    training_bar = trange(
+        total_steps,
+        desc=progress_desc,
+        unit="batch",
+        leave=False,
+        position=1,
+        disable=_progress_disabled(show_progress),
+    )
+    for _ in training_bar:
+        batch = replay.sample(batch_size, augment=augment)
+        states = torch.from_numpy(batch.states).to(device)
+        policy_targets = torch.from_numpy(batch.policy_targets).to(device)
+        value_targets = torch.from_numpy(batch.value_targets).to(device)
+        optimizer.zero_grad()
+        with torch.cuda.amp.autocast(enabled=amp_enabled):
+            policy_logits, values = network(states)
+            policy_loss, value_loss = policy_value_loss_components(policy_logits, values, policy_targets, value_targets)
+            loss = policy_loss + value_loss
+        scaler.scale(loss).backward()
+        if gradient_clip_norm > 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(network.parameters(), gradient_clip_norm)
+        scaler.step(optimizer)
+        scaler.update()
+        losses.append(float(loss.item()))
+        policy_losses.append(float(policy_loss.item()))
+        value_losses.append(float(value_loss.item()))
+        target_entropy = -(policy_targets * torch.log(policy_targets.clamp_min(1e-8))).sum(dim=1).mean()
+        policy_target_entropies.append(float(target_entropy.item()))
+        training_bar.set_postfix(
+            loss=f"{losses[-1]:.4f}",
+            policy=f"{policy_losses[-1]:.4f}",
+            value=f"{value_losses[-1]:.4f}",
+            refresh=False,
+        )
     return {
         "loss": sum(losses) / len(losses),
         "policy_loss": sum(policy_losses) / len(policy_losses),
         "value_loss": sum(value_losses) / len(value_losses),
         "policy_target_entropy": sum(policy_target_entropies) / len(policy_target_entropies),
     }
+
+
+def _progress_disabled(show_progress: bool) -> bool | None:
+    return None if show_progress else True
