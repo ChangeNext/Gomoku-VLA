@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Gomoku Human Evaluation</title>
+    <link rel="stylesheet" href="/style.css?v=20260703-live-ai-lastmove">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="toolbar">
+        <button id="newGame">New game</button>
+        <span id="status">Loading</span>
+        <span id="stats">0 games</span>
+      </section>
+      <div id="board" class="board" aria-label="Gomoku board"></div>
+    </main>
+    <div id="modal" class="modal">
+      <div class="dialog">
+        <h1 id="modalTitle">Choose color</h1>
+        <p id="modalText">Play as black first or white second.</p>
+        <div id="modalActions" class="dialog-actions">
+          <button id="playBlack">Black first</button>
+          <button id="playWhite">White second</button>
+        </div>
+      </div>
+    </div>
+    <script src="/app.js?v=20260703-live-ai-lastmove"></script>
+  </body>
+</html>
