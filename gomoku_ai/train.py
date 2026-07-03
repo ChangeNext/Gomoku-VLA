@@ -15,7 +15,7 @@ from board import GomokuBoard, Player
 
 from .mcts import MCTSConfig
 from .replay_buffer import ReplayBuffer
-from .self_play import SelfPlayConfig, generate_self_play_game, select_greedy_move
+from .self_play import SelfPlayConfig, generate_self_play_games, select_greedy_move
 from .torch_model import (
     GomokuPolicyValueNet,
     TorchPolicyValueModel,
@@ -33,6 +33,7 @@ class AlphaZeroTrainingConfig:
     enforce_center_opening: bool = True
     iterations: int = 1
     games_per_iteration: int = 2
+    self_play_batch_size: int = 1
     mcts_simulations: int = 64
     epochs: int = 1
     batches_per_epoch: int = 1
@@ -79,6 +80,8 @@ class TrainingRunPaths:
 
 
 def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
+    if config.self_play_batch_size <= 0:
+        raise ValueError("self_play_batch_size must be positive")
     device = torch.device(config.device)
     if device.type == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA device was requested, but torch.cuda.is_available() is false")
@@ -128,6 +131,7 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
     for iteration in iteration_bar:
         global_iteration = start_iteration + iteration
         samples_added = 0
+        games_completed = 0
         game_bar = trange(
             config.games_per_iteration,
             desc=f"Self-play iter {global_iteration}",
@@ -136,10 +140,29 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
             position=1,
             disable=_progress_disabled(config.show_progress),
         )
-        for _ in game_bar:
-            samples = generate_self_play_game(
+        while games_completed < config.games_per_iteration:
+            game_count = min(config.self_play_batch_size, config.games_per_iteration - games_completed)
+            max_moves = config.board_size * config.board_size
+            move_bar = trange(
+                game_count * max_moves,
+                desc=f"Self-play moves {games_completed + 1}-{games_completed + game_count}",
+                unit="move",
+                leave=False,
+                position=2,
+                disable=_progress_disabled(config.show_progress),
+            )
+            last_played_moves = 0
+
+            def update_self_play_progress(played_moves: int, completed_games: int, active_games: int) -> None:
+                nonlocal last_played_moves
+                move_bar.update(max(0, played_moves - last_played_moves))
+                last_played_moves = played_moves
+                move_bar.set_postfix(done=completed_games, active=active_games, refresh=False)
+
+            game_samples = generate_self_play_games(
                 model,
-                SelfPlayConfig(
+                game_count=game_count,
+                config=SelfPlayConfig(
                     board_size=config.board_size,
                     win_length=config.win_length,
                     rule_set=config.rule_set,
@@ -154,10 +177,16 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
                     temperature_moves=config.temperature_moves,
                     late_temperature=config.late_temperature,
                 ),
+                progress_callback=update_self_play_progress,
             )
-            replay.add_game(samples)
-            samples_added += len(samples)
-            game_bar.set_postfix(samples=samples_added, replay=len(replay), refresh=False)
+            move_bar.close()
+            for samples in game_samples:
+                replay.add_game(samples)
+                samples_added += len(samples)
+            games_completed += game_count
+            game_bar.update(game_count)
+            game_bar.set_postfix(samples=samples_added, replay=len(replay), batch=game_count, refresh=False)
+        game_bar.close()
 
         metrics = train_epoch_metrics(
             network,

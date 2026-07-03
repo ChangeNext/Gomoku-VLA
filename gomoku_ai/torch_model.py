@@ -98,25 +98,39 @@ class TorchPolicyValueModel:
         self.device = torch.device(device)
 
     def predict(self, board: GomokuBoard) -> tuple[np.ndarray, float]:
-        if board.size != self.network.board_size:
-            raise ValueError(f"model board_size={self.network.board_size}, got board size={board.size}")
-        state = torch.from_numpy(encode_board(board, feature_planes=self.network.input_channels)).unsqueeze(0).to(self.device)
+        policies, values = self.predict_batch([board])
+        return policies[0], float(values[0])
+
+    def predict_batch(self, boards: list[GomokuBoard]) -> tuple[np.ndarray, np.ndarray]:
+        if not boards:
+            return np.zeros((0, self.network.action_size), dtype=np.float32), np.zeros((0,), dtype=np.float32)
+        if any(board.size != self.network.board_size for board in boards):
+            bad_size = next(board.size for board in boards if board.size != self.network.board_size)
+            raise ValueError(f"model board_size={self.network.board_size}, got board size={bad_size}")
+        states = np.stack(
+            [encode_board(board, feature_planes=self.network.input_channels) for board in boards]
+        ).astype(np.float32)
+        state_tensor = torch.from_numpy(states).to(self.device)
         self.network.eval()
         with torch.no_grad():
-            logits, value = self.network(state)
-            logits = logits.squeeze(0).detach().cpu().numpy().astype(np.float32)
+            logits_tensor, value_tensor = self.network(state_tensor)
+            logits_batch = logits_tensor.detach().cpu().numpy().astype(np.float32)
+            values = value_tensor.detach().cpu().numpy().astype(np.float32)
 
-        mask = legal_action_mask(board)
-        logits[~mask] = -1.0e9
-        policy = _softmax(logits)
-        policy[~mask] = 0.0
-        total = float(policy.sum())
-        if total <= 0.0 and mask.any():
-            policy[mask] = 1.0 / float(mask.sum())
-        elif total > 0.0:
-            policy /= total
-        return policy.astype(np.float32), float(value.item())
-
+        policies = np.zeros_like(logits_batch, dtype=np.float32)
+        for index, board in enumerate(boards):
+            mask = legal_action_mask(board)
+            logits = logits_batch[index]
+            logits[~mask] = -1.0e9
+            policy = _softmax(logits)
+            policy[~mask] = 0.0
+            total = float(policy.sum())
+            if total <= 0.0 and mask.any():
+                policy[mask] = 1.0 / float(mask.sum())
+            elif total > 0.0:
+                policy /= total
+            policies[index] = policy.astype(np.float32)
+        return policies, values
 
 def save_checkpoint(network: GomokuPolicyValueNet, path: str | Path, metadata: dict | None = None) -> None:
     checkpoint = {

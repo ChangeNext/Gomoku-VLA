@@ -63,6 +63,7 @@ python -m scripts.train_alphazero \
   --win-length 5 \
   --iterations 80 \
   --games 80 \
+  --self-play-batch-size 8 \
   --simulations 256 \
   --epochs 8 \
   --batches-per-epoch 128 \
@@ -80,6 +81,8 @@ python -m scripts.train_alphazero \
 ```
 
 Run this in `tmux` for long training. Check progress with:
+
+`--self-play-batch-size` keeps the same search depth and model size, but advances multiple self-play games together so MCTS leaf evaluations are sent through the policy/value network as batches. Start with 4 or 8 on CUDA and increase only if GPU memory remains comfortable.
 
 ```bash
 tail -n 10 gomoku_ai/runs/<run-name>/metrics/history.csv

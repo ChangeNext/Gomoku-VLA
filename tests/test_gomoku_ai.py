@@ -14,8 +14,10 @@ from gomoku_ai import (
     action_to_index,
     encode_board,
     generate_self_play_game,
+    generate_self_play_games,
     legal_action_mask,
     run_mcts,
+    run_mcts_batch,
     select_tactical_move,
 )
 from gomoku_ai.replay_buffer import augment_state_policy
@@ -65,6 +67,18 @@ class GomokuAITest(unittest.TestCase):
         self.assertAlmostEqual(float(policy.sum()), 1.0, places=5)
         self.assertEqual(policy[action_to_index(0, 0, 5)], 0.0)
 
+    def test_batched_mcts_returns_policy_for_each_board(self) -> None:
+        boards = [GomokuBoard(size=5), GomokuBoard(size=5)]
+        boards[0].place(0, 0)
+        boards[1].place(1, 1)
+        policies = run_mcts_batch(boards, UniformPolicyValueModel(), MCTSConfig(simulations=4))
+        self.assertEqual(len(policies), 2)
+        for policy in policies:
+            self.assertEqual(policy.shape, (25,))
+            self.assertAlmostEqual(float(policy.sum()), 1.0, places=5)
+        self.assertEqual(policies[0][action_to_index(0, 0, 5)], 0.0)
+        self.assertEqual(policies[1][action_to_index(1, 1, 5)], 0.0)
+
     def test_self_play_generates_training_samples(self) -> None:
         samples = generate_self_play_game(
             UniformPolicyValueModel(),
@@ -75,6 +89,15 @@ class GomokuAITest(unittest.TestCase):
         self.assertEqual(samples[0].state.shape, (3, 5, 5))
         self.assertEqual(samples[0].policy_target.shape, (25,))
         self.assertTrue(np.isin(samples[0].value_target, [-1.0, 0.0, 1.0]))
+
+    def test_batched_self_play_generates_multiple_games(self) -> None:
+        games = generate_self_play_games(
+            UniformPolicyValueModel(),
+            game_count=3,
+            config=SelfPlayConfig(board_size=5, win_length=4, rule_set="free", mcts=MCTSConfig(simulations=2), max_moves=4),
+        )
+        self.assertEqual(len(games), 3)
+        self.assertTrue(all(0 < len(samples) <= 4 for samples in games))
 
     def test_torch_network_forward_shapes(self) -> None:
         network = GomokuPolicyValueNet(board_size=5, channels=8, input_channels=3)

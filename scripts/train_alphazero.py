@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--no-center-opening", action="store_true")
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--games", type=int, default=2)
+    parser.add_argument("--self-play-batch-size", type=int, default=1)
     parser.add_argument("--simulations", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batches-per-epoch", type=int, default=1)
@@ -54,6 +55,7 @@ def main() -> None:
             enforce_center_opening=args.rule_set == "renju" and not args.no_center_opening,
             iterations=args.iterations,
             games_per_iteration=args.games,
+            self_play_batch_size=args.self_play_batch_size,
             mcts_simulations=args.simulations,
             epochs=args.epochs,
             batches_per_epoch=args.batches_per_epoch,

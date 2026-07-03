@@ -36,21 +36,51 @@ class Node:
 
 
 def run_mcts(board: GomokuBoard, model: PolicyValueModel, config: MCTSConfig | None = None) -> np.ndarray:
+    return run_mcts_batch([board], model, config)[0]
+
+
+def run_mcts_batch(
+    boards: list[GomokuBoard],
+    model: PolicyValueModel,
+    config: MCTSConfig | None = None,
+) -> list[np.ndarray]:
     config = config or MCTSConfig()
-    root = Node(prior=1.0)
-    root_board = clone_board(board)
-    _expand(root, root_board, model)
+    if not boards:
+        return []
+    board_size = boards[0].size
+    if any(board.size != board_size for board in boards):
+        raise ValueError("all boards in a batch must have the same size")
+
+    roots = [Node(prior=1.0) for _ in boards]
+    root_boards = [clone_board(board) for board in boards]
+    _expand_batch(roots, root_boards, model)
     if config.add_root_noise:
-        _add_root_dirichlet_noise(root, config)
+        for root in roots:
+            _add_root_dirichlet_noise(root, config)
 
     for _ in range(config.simulations):
-        search_board = clone_board(board)
-        _search(root, search_board, model, config)
+        searches = [
+            _descend_to_leaf(root, clone_board(board), config)
+            for root, board in zip(roots, boards)
+        ]
+        leaves = [search.leaf for search in searches if search.leaf is not None]
+        leaf_boards = [search.board for search in searches if search.leaf is not None]
+        if leaves:
+            values = _expand_batch(leaves, leaf_boards, model)
+            value_iter = iter(values)
+        else:
+            value_iter = iter(())
+        for search in searches:
+            leaf_value = search.terminal_value if search.leaf is None else next(value_iter)
+            _backup(search.path, leaf_value)
 
-    visits = np.zeros(board.size * board.size, dtype=np.float32)
-    for action_index, child in root.children.items():
-        visits[action_index] = child.visit_count
-    return _visits_to_policy(visits, legal_action_mask(board), config.temperature)
+    policies: list[np.ndarray] = []
+    for root, board in zip(roots, boards):
+        visits = np.zeros(board.size * board.size, dtype=np.float32)
+        for action_index, child in root.children.items():
+            visits[action_index] = child.visit_count
+        policies.append(_visits_to_policy(visits, legal_action_mask(board), config.temperature))
+    return policies
 
 
 def _add_root_dirichlet_noise(root: Node, config: MCTSConfig) -> None:
@@ -85,8 +115,56 @@ def _search(node: Node, board: GomokuBoard, model: PolicyValueModel, config: MCT
     return value
 
 
+@dataclass
+class SearchPath:
+    path: list[Node]
+    board: GomokuBoard
+    leaf: Node | None
+    terminal_value: float = 0.0
+
+
+def _descend_to_leaf(root: Node, board: GomokuBoard, config: MCTSConfig) -> SearchPath:
+    node = root
+    path = [node]
+    while True:
+        if board.winner is not None:
+            return SearchPath(path=path, board=board, leaf=None, terminal_value=_terminal_value(board))
+        if not node.children:
+            return SearchPath(path=path, board=board, leaf=node)
+        action_index, child = _select_child(node, config)
+        board.place(*index_to_action(action_index, board.size))
+        node = child
+        path.append(node)
+
+
+def _backup(path: list[Node], leaf_value: float) -> None:
+    value = leaf_value
+    for node in reversed(path):
+        node.visit_count += 1
+        node.value_sum += value
+        value = -value
+
+
 def _expand(node: Node, board: GomokuBoard, model: PolicyValueModel) -> float:
-    policy, value = model.predict(board)
+    return float(_expand_batch([node], [board], model)[0])
+
+
+def _expand_batch(nodes: list[Node], boards: list[GomokuBoard], model: PolicyValueModel) -> np.ndarray:
+    if len(nodes) != len(boards):
+        raise ValueError("nodes and boards must have the same length")
+    if not nodes:
+        return np.zeros((0,), dtype=np.float32)
+    policies, values = model.predict_batch(boards)
+    if policies.shape != (len(boards), boards[0].size * boards[0].size):
+        raise ValueError(f"policy batch shape must be {(len(boards), boards[0].size * boards[0].size)}, got {policies.shape}")
+    if values.shape != (len(boards),):
+        raise ValueError(f"value batch shape must be {(len(boards),)}, got {values.shape}")
+    for node, board, policy, value in zip(nodes, boards, policies, values):
+        _expand_with_policy(node, board, policy, float(value))
+    return np.clip(values.astype(np.float32), -1.0, 1.0)
+
+
+def _expand_with_policy(node: Node, board: GomokuBoard, policy: np.ndarray, value: float) -> float:
     policy = np.asarray(policy, dtype=np.float32).copy()
     if policy.shape != (board.size * board.size,):
         raise ValueError(f"policy shape must be {(board.size * board.size,)}, got {policy.shape}")

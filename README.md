@@ -173,7 +173,7 @@ python -m scripts.train_alphazero \
   --learning-rate 3e-4 \
   --device cuda \
   --amp \
-  --run-name 2026-06-23_15x15_renju_resnet \
+  --run-name 2026-06-24_15x15_renju_resnet \
   --channels 256 \
   --res-blocks 16 \
   --input-channels 6 \

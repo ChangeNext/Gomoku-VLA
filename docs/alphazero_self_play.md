@@ -15,9 +15,9 @@ Camera recognition and robot control should feed into and consume this policy la
 The initial scaffold is in `gomoku_ai/`.
 
 - `encoding.py`: converts `GomokuBoard` to current-player tensor input and maps `(row, col)` actions to flat indices.
-- `model.py`: defines the `PolicyValueModel` interface plus `UniformPolicyValueModel` for plumbing tests.
-- `mcts.py`: runs PUCT-style Monte Carlo Tree Search and returns an improved policy over legal moves.
-- `self_play.py`: generates self-play samples containing `state`, `policy_target`, `value_target`, and `player`.
+- `model.py`: defines the `PolicyValueModel` interface, including batched prediction, plus `UniformPolicyValueModel` for plumbing tests.
+- `mcts.py`: runs PUCT-style Monte Carlo Tree Search and returns an improved policy over legal moves. It can batch leaf network evaluations across multiple simultaneous games.
+- `self_play.py`: generates self-play samples containing `state`, `policy_target`, `value_target`, and `player`, with optional batched game generation.
 - `replay_buffer.py`: stores self-play samples and builds mini-batches.
 - `torch_model.py`: defines a ResNet-style PyTorch policy/value network plus legacy checkpoint loading.
 - `train.py`: runs self-play, trains the network, evaluates promotion candidates, and writes structured run outputs.
@@ -53,6 +53,7 @@ Start a 15x15 Renju run:
 python -m scripts.train_alphazero \
   --iterations 80 \
   --games 80 \
+  --self-play-batch-size 8 \
   --simulations 256 \
   --epochs 8 \
   --batches-per-epoch 128 \
@@ -66,7 +67,7 @@ python -m scripts.train_alphazero \
   --evaluation-simulations 64
 ```
 
-Training uses random rotation/flip augmentation by default so each sampled batch sees board-equivalent positions in different orientations. `--epochs` controls passes through the training loop, and `--batches-per-epoch` controls how many replay batches are sampled per epoch. Use `--no-augment` only for debugging exact sample contents. The default network is a deeper residual CNN with AdamW, optional CUDA AMP, and gradient clipping because Gomoku/Renju is a small 2D grid game with strong local pattern and translation structure; Transformer-style models are left for later comparison experiments after the AlphaZero loop and evaluator are stable.
+Training uses random rotation/flip augmentation by default so each sampled batch sees board-equivalent positions in different orientations. `--epochs` controls passes through the training loop, and `--batches-per-epoch` controls how many replay batches are sampled per epoch. `--self-play-batch-size` controls how many self-play games advance together; larger values improve GPU utilization by batching MCTS leaf inference without reducing MCTS simulations. Use `--no-augment` only for debugging exact sample contents. The default network is a deeper residual CNN with AdamW, optional CUDA AMP, and gradient clipping because Gomoku/Renju is a small 2D grid game with strong local pattern and translation structure; Transformer-style models are left for later comparison experiments after the AlphaZero loop and evaluator are stable.
 
 Run outputs are grouped together:
 
@@ -116,7 +117,7 @@ The input is encoded from the current player's perspective:
 
 1. Run long 15x15 Renju training in `tmux`.
 2. Increase evaluator games after the first stable checkpoint.
-3. Add batched MCTS inference if GPU utilization becomes the bottleneck.
+3. Tune `--self-play-batch-size` for the active GPU memory budget.
 4. Connect the selected `(row, col)` move to `simulation.GomokuMujocoEnv.step()`.
 
 ## Current Limits
