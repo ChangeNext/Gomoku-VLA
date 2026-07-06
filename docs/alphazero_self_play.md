@@ -91,6 +91,23 @@ python -m scripts.play_ai_cli \
 
 Use `--human white` to let the AI play the first move as black. The CLI reads board size and rule metadata from the checkpoint and uses `--win-length 5` by default.
 
+Use the shared inference API when connecting a checkpoint to simulation, robot control, or dataset generation:
+
+```python
+from gomoku_ai.inference import CheckpointPolicy
+
+policy = CheckpointPolicy(
+    "gomoku_ai/runs/2026-06-23_15x15_renju_resnet/checkpoints/best.pt",
+    device="auto",
+    simulations=64,
+)
+board = policy.new_board()
+prediction = policy.predict(board)
+row, col = prediction.move
+```
+
+`prediction.policy` is the MCTS-improved visit distribution over all board cells, `prediction.value` is the network value estimate for the current player before search, and `prediction.used_tactical_move` marks immediate win/block overrides. Downstream data collectors should store these fields with each selected move so later VLA datasets can distinguish the strategic teacher signal from robot execution results.
+
 Run all tests:
 
 ```bash

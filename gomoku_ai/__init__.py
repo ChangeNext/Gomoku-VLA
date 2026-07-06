@@ -1,4 +1,6 @@
 from .encoding import action_to_index, encode_board, index_to_action, legal_action_mask
+from .episode_recorder import EpisodeStepRecord, append_episode_record, default_episode_output_path, play_and_record_episode
+from .inference import CheckpointPolicy, MovePrediction, predict_move, resolve_device
 from .mcts import MCTSConfig, run_mcts, run_mcts_batch
 from .model import PolicyValueModel, UniformPolicyValueModel
 from .replay_buffer import ReplayBuffer, TrainingBatch
@@ -7,6 +9,9 @@ from .tactics import find_forced_block, find_immediate_win, select_tactical_move
 
 __all__ = [
     "MCTSConfig",
+    "CheckpointPolicy",
+    "EpisodeStepRecord",
+    "MovePrediction",
     "PolicyValueModel",
     "ReplayBuffer",
     "SelfPlayConfig",
@@ -14,6 +19,8 @@ __all__ = [
     "TrainingBatch",
     "UniformPolicyValueModel",
     "action_to_index",
+    "append_episode_record",
+    "default_episode_output_path",
     "encode_board",
     "find_forced_block",
     "find_immediate_win",
@@ -21,6 +28,9 @@ __all__ = [
     "generate_self_play_games",
     "index_to_action",
     "legal_action_mask",
+    "play_and_record_episode",
+    "predict_move",
+    "resolve_device",
     "run_mcts",
     "run_mcts_batch",
     "select_tactical_move",

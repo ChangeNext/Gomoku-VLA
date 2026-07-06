@@ -12,6 +12,7 @@ import mujoco
 import numpy as np
 
 from board import GomokuBoard, Player
+from board.gomoku import RuleSet
 
 
 class GomokuMujocoEnv:
@@ -20,12 +21,20 @@ class GomokuMujocoEnv:
     def __init__(
         self,
         board_size: int = 15,
+        win_length: int = 5,
+        rule_set: RuleSet = "free",
+        enforce_center_opening: bool = False,
         cell_size: float = 0.035,
         stone_radius: float = 0.012,
         stone_height: float = 0.006,
         show_robot: bool = True,
     ) -> None:
-        self.board = GomokuBoard(size=board_size)
+        self.board = GomokuBoard(
+            size=board_size,
+            win_length=win_length,
+            rule_set=rule_set,
+            enforce_center_opening=enforce_center_opening,
+        )
         self.cell_size = cell_size
         self.stone_radius = stone_radius
         self.stone_height = stone_height
@@ -81,6 +90,17 @@ class GomokuMujocoEnv:
         mujoco.mj_forward(self.model, self.data)
         return self.selected_cell
 
+    def set_selection(self, row: int, col: int, update_robot_target: bool = False) -> tuple[int, int]:
+        if not self.board.is_on_board(row, col):
+            raise ValueError(f"cell out of range: row={row}, col={col}")
+        self.selected_cell = (row, col)
+        if update_robot_target:
+            self.robot_target_cell = (row, col)
+            self._update_hand_geoms()
+        self._update_cursor_geom()
+        mujoco.mj_forward(self.model, self.data)
+        return self.selected_cell
+
     def board_to_world(self, row: int, col: int) -> tuple[float, float, float]:
         if not self.board.is_on_board(row, col):
             raise ValueError(f"cell out of range: row={row}, col={col}")
@@ -97,6 +117,24 @@ class GomokuMujocoEnv:
         if not self.board.is_on_board(row, col):
             raise ValueError(f"world position outside board: x={x}, y={y}")
         return row, col
+
+    def stone_supply_world(self, player: Player) -> tuple[float, float, float]:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        half = self.board_extent / 2.0
+        x = -half - self.cell_size * 1.15
+        y = half + self.cell_size * (0.75 if player == Player.BLACK else 1.55)
+        z = 0.012 + self.stone_height
+        return x, y, z
+
+    def robot_home_world(self) -> tuple[float, float, float]:
+        return self._robot_home_world()
+
+    def set_robot_hand_world(self, x: float, y: float, z: float, gripper: float = 1.0) -> None:
+        if not self.show_robot:
+            raise ValueError("robot geoms are disabled")
+        self._set_hand_geoms(x, y, z, gripper)
+        mujoco.mj_forward(self.model, self.data)
 
     def simulate(self, steps: int = 10) -> None:
         for _ in range(steps):
@@ -152,14 +190,20 @@ class GomokuMujocoEnv:
     def _update_hand_geoms(self) -> None:
         if self.robot_target_cell is None:
             x, y, _ = self._robot_home_world()
+            z = 0.052
         else:
-            x, y, _ = self.board_to_world(*self.robot_target_cell)
+            x, y, z = self.board_to_world(*self.robot_target_cell)
+            z += 0.034
+        self._set_hand_geoms(x, y, z, gripper=1.0)
+
+    def _set_hand_geoms(self, x: float, y: float, z: float, gripper: float) -> None:
         hand_id = self._geom_ids["panda_hand"]
         left_id = self._geom_ids["panda_finger_left"]
         right_id = self._geom_ids["panda_finger_right"]
-        self.model.geom_pos[hand_id] = np.array([x, y, 0.052], dtype=float)
-        self.model.geom_pos[left_id] = np.array([x - 0.012, y, 0.038], dtype=float)
-        self.model.geom_pos[right_id] = np.array([x + 0.012, y, 0.038], dtype=float)
+        finger_offset = 0.007 + min(max(gripper, 0.0), 1.0) * 0.007
+        self.model.geom_pos[hand_id] = np.array([x, y, z], dtype=float)
+        self.model.geom_pos[left_id] = np.array([x - finger_offset, y, z - 0.014], dtype=float)
+        self.model.geom_pos[right_id] = np.array([x + finger_offset, y, z - 0.014], dtype=float)
 
     def _robot_home_world(self) -> tuple[float, float, float]:
         board_half = self.board_extent / 2.0 + self.cell_size * 0.7

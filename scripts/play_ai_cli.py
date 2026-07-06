@@ -4,12 +4,8 @@ import argparse
 from pathlib import Path
 from typing import Callable
 
-import torch
-
 from board import GomokuBoard, Player
-from gomoku_ai.mcts import MCTSConfig
-from gomoku_ai.self_play import select_greedy_move
-from gomoku_ai.torch_model import TorchPolicyValueModel, load_checkpoint
+from gomoku_ai.inference import CheckpointPolicy, resolve_device
 
 
 OutputFn = Callable[[str], None]
@@ -34,17 +30,10 @@ def parse_human_move(raw: str) -> tuple[int, int] | None:
     return int(row_text), int(col_text)
 
 
-def resolve_device(device: str) -> torch.device:
-    if device == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device)
-
-
 def play_game(
     board: GomokuBoard,
-    model: TorchPolicyValueModel,
+    policy: CheckpointPolicy,
     human_player: Player,
-    simulations: int,
     input_fn: Callable[[str], str] = input,
     output: OutputFn = print,
 ) -> None:
@@ -52,7 +41,6 @@ def play_game(
         raise ValueError("human_player must be BLACK or WHITE")
 
     ai_player = human_player.opponent
-    mcts_config = MCTSConfig(simulations=simulations, temperature=0.0)
 
     output(f"Human: {human_player.name} | AI: {ai_player.name}")
     while board.winner is None:
@@ -72,7 +60,8 @@ def play_game(
             except ValueError as exc:
                 output(f"Invalid move: {exc}")
         else:
-            row, col = select_greedy_move(board, model, mcts_config)
+            prediction = policy.predict(board)
+            row, col = prediction.move
             output(f"AI {ai_player.name}: {row} {col}")
             board.place(row, col)
 
@@ -100,23 +89,22 @@ def main() -> None:
         parser.error(f"checkpoint not found: {checkpoint_path}")
 
     device = resolve_device(args.device)
-    network = load_checkpoint(checkpoint_path, device=device)
-    model = TorchPolicyValueModel(network, device=device)
-    rule_set = args.rule_set or network.rule_set
-    enforce_center_opening = network.enforce_center_opening
+    policy = CheckpointPolicy(checkpoint_path, device=device, simulations=args.simulations)
+    rule_set = args.rule_set or policy.rule_set
+    enforce_center_opening = policy.enforce_center_opening
     if args.center_opening:
         enforce_center_opening = True
     if args.no_center_opening:
         enforce_center_opening = False
     board = GomokuBoard(
-        size=network.board_size,
+        size=policy.board_size,
         win_length=args.win_length,
         rule_set=rule_set,
         enforce_center_opening=enforce_center_opening,
     )
     human_player = Player.BLACK if args.human == "black" else Player.WHITE
     print(f"Loaded {checkpoint_path} on {device}")
-    play_game(board, model, human_player, simulations=args.simulations)
+    play_game(board, policy, human_player)
 
 
 if __name__ == "__main__":

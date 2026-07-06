@@ -7,7 +7,9 @@ import numpy as np
 
 from board import GomokuBoard, Player
 from gomoku_ai import (
+    CheckpointPolicy,
     MCTSConfig,
+    MovePrediction,
     ReplayBuffer,
     SelfPlayConfig,
     UniformPolicyValueModel,
@@ -16,6 +18,7 @@ from gomoku_ai import (
     generate_self_play_game,
     generate_self_play_games,
     legal_action_mask,
+    predict_move,
     run_mcts,
     run_mcts_batch,
     select_tactical_move,
@@ -219,6 +222,56 @@ class GomokuAITest(unittest.TestCase):
             if col < 2:
                 blocking_board.place(1, col)
         self.assertEqual(select_tactical_move(blocking_board), (0, 3))
+
+    def test_predict_move_returns_policy_value_and_move(self) -> None:
+        board = GomokuBoard(size=5, win_length=4)
+        prediction = predict_move(
+            board,
+            UniformPolicyValueModel(),
+            MCTSConfig(simulations=4, temperature=0.0),
+        )
+
+        self.assertIsInstance(prediction, MovePrediction)
+        self.assertIn(prediction.move, board.legal_moves())
+        self.assertEqual(prediction.policy.shape, (25,))
+        self.assertAlmostEqual(float(prediction.policy.sum()), 1.0, places=5)
+        self.assertEqual(prediction.action_index, action_to_index(prediction.row, prediction.col, 5))
+        self.assertEqual(prediction.value, 0.0)
+
+    def test_predict_move_uses_tactical_override(self) -> None:
+        board = GomokuBoard(size=5, win_length=4)
+        for col in range(3):
+            board.place(0, col)
+            board.place(1, col)
+
+        prediction = predict_move(board, UniformPolicyValueModel(), MCTSConfig(simulations=1))
+
+        self.assertEqual(prediction.move, (0, 3))
+        self.assertTrue(prediction.used_tactical_move)
+        self.assertEqual(float(prediction.policy[action_to_index(0, 3, 5)]), 1.0)
+
+    def test_checkpoint_policy_loads_metadata_and_predicts(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "model.pt"
+            network = GomokuPolicyValueNet(
+                board_size=5,
+                channels=8,
+                res_blocks=1,
+                rule_set="renju",
+                enforce_center_opening=True,
+            )
+            save_checkpoint(network, path)
+
+            policy = CheckpointPolicy(path, device="cpu", simulations=2, use_tactics=False)
+            board = policy.new_board()
+            prediction = policy.predict(board)
+
+            self.assertEqual(policy.board_size, 5)
+            self.assertEqual(policy.rule_set, "renju")
+            self.assertTrue(policy.enforce_center_opening)
+            self.assertEqual(board.rule_set, "renju")
+            self.assertTrue(board.enforce_center_opening)
+            self.assertIn(prediction.move, board.legal_moves())
 
     def test_tactical_move_skips_renju_forbidden_opponent_moves(self) -> None:
         board = GomokuBoard(rule_set="renju")
