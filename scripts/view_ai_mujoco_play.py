@@ -26,6 +26,7 @@ class AIMujocoViewer:
         camera: str,
         move_delay: float,
         waypoint_delay: float,
+        robot_model: str,
     ) -> None:
         self.policy = CheckpointPolicy(checkpoint, device=device, simulations=simulations)
         self.env = GomokuMujocoEnv(
@@ -38,12 +39,14 @@ class AIMujocoViewer:
                 else enforce_center_opening
             ),
             show_robot=True,
+            robot_model=robot_model,
         )
         self.checkpoint = checkpoint
         self.max_moves = max_moves or self.env.board.size * self.env.board.size
         self.camera = camera
         self.move_delay = move_delay
         self.waypoint_delay = waypoint_delay
+        self.robot_model = robot_model
         self.paused = False
         self.single_step_requested = False
         self.stopped = False
@@ -93,6 +96,19 @@ class AIMujocoViewer:
         self._sync(handle)
         time.sleep(self.move_delay)
 
+        if self.robot_model == "panda":
+            self._play_panda_target_move(handle, row, col)
+        elif self.robot_model == "so101":
+            self._play_so101_target_move(handle, row, col)
+        else:
+            self._play_kinematic_pick_place(handle, row, col, player)
+
+        with handle.lock():
+            self.env.step((row, col), update_robot_target=True)
+        self._sync(handle, phase="placed")
+        time.sleep(self.move_delay)
+
+    def _play_kinematic_pick_place(self, handle: mujoco.viewer.Handle, row: int, col: int, player) -> None:
         robot_action = build_pick_place_action(self.env, (row, col), player)
         for point in robot_action["ee_trajectory"]:
             if not handle.is_running() or self.stopped:
@@ -111,10 +127,61 @@ class AIMujocoViewer:
             self._sync(handle, phase=str(point["phase"]))
             time.sleep(self.waypoint_delay)
 
+    def _play_panda_target_move(self, handle: mujoco.viewer.Handle, row: int, col: int) -> None:
         with handle.lock():
-            self.env.step((row, col), update_robot_target=True)
-        self._sync(handle, phase="placed")
-        time.sleep(self.move_delay)
+            target_xyz = self.env.panda_target_pose_for_cell(row, col)
+            joint_targets = self.env.solve_panda_ik(target_xyz)
+            trajectory = self.env.interpolate_panda_joint_trajectory(joint_targets, steps=90)
+            self.env.set_panda_gripper(1.0)
+
+        for index, waypoint in enumerate(trajectory):
+            if not handle.is_running() or self.stopped:
+                return
+            while self.paused and handle.is_running() and not self.stopped:
+                self._sync(handle, phase="panda_paused")
+                time.sleep(1.0 / 30.0)
+            with handle.lock():
+                self.env.set_panda_joint_targets(waypoint, gripper=1.0)
+                self.env.simulate(6)
+            self._sync(handle, phase=f"panda_move {index + 1}/{len(trajectory)}")
+            time.sleep(self.waypoint_delay)
+
+        for gripper, phase in ((0.0, "gripper_close"), (1.0, "gripper_open")):
+            if not handle.is_running() or self.stopped:
+                return
+            with handle.lock():
+                self.env.set_panda_gripper(gripper)
+                self.env.simulate(20)
+            self._sync(handle, phase=phase)
+            time.sleep(self.waypoint_delay)
+
+    def _play_so101_target_move(self, handle: mujoco.viewer.Handle, row: int, col: int) -> None:
+        with handle.lock():
+            target_xyz = self.env.so101_target_pose_for_cell(row, col)
+            joint_targets = self.env.solve_so101_ik(target_xyz)
+            trajectory = self.env.interpolate_so101_joint_trajectory(joint_targets, steps=80)
+            self.env.set_so101_gripper(1.0)
+
+        for index, waypoint in enumerate(trajectory):
+            if not handle.is_running() or self.stopped:
+                return
+            while self.paused and handle.is_running() and not self.stopped:
+                self._sync(handle, phase="so101_paused")
+                time.sleep(1.0 / 30.0)
+            with handle.lock():
+                self.env.set_so101_joint_targets(waypoint, gripper=1.0)
+                self.env.simulate(6)
+            self._sync(handle, phase=f"so101_move {index + 1}/{len(trajectory)}")
+            time.sleep(self.waypoint_delay)
+
+        for gripper, phase in ((0.0, "gripper_close"), (1.0, "gripper_open")):
+            if not handle.is_running() or self.stopped:
+                return
+            with handle.lock():
+                self.env.set_so101_gripper(gripper)
+                self.env.simulate(20)
+            self._sync(handle, phase=phase)
+            time.sleep(self.waypoint_delay)
 
     def _set_camera(self, handle: mujoco.viewer.Handle) -> None:
         camera_id = mujoco.mj_name2id(self.env.model, mujoco.mjtObj.mjOBJ_CAMERA, self.camera)
@@ -160,6 +227,7 @@ def main() -> None:
     parser.add_argument("--camera", choices=("top", "iso", "robot_full"), default="robot_full")
     parser.add_argument("--move-delay", type=float, default=0.35)
     parser.add_argument("--waypoint-delay", type=float, default=0.18)
+    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="kinematic")
     args = parser.parse_args()
 
     if args.center_opening and args.no_center_opening:
@@ -184,6 +252,7 @@ def main() -> None:
         camera=args.camera,
         move_delay=args.move_delay,
         waypoint_delay=args.waypoint_delay,
+        robot_model=args.robot_model,
     ).run()
 
 

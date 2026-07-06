@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import argparse
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-gomoku-vla")
 
@@ -14,8 +15,9 @@ from simulation import GomokuMujocoEnv
 
 
 class InteractiveGomokuApp:
-    def __init__(self) -> None:
-        self.env = GomokuMujocoEnv()
+    def __init__(self, robot_model: str = "kinematic") -> None:
+        self.env = GomokuMujocoEnv(robot_model=robot_model)
+        self.robot_model = robot_model
         self.human_player: Player | None = None
         self.game_over_popup_shown = False
         self.fig: Figure
@@ -141,6 +143,10 @@ class InteractiveGomokuApp:
             return
         move = self.select_robot_move()
         if move is not None:
+            if self.robot_model == "panda":
+                self.env.move_panda_to_cell(*move)
+            elif self.robot_model == "so101":
+                self.env.move_so101_to_cell(*move)
             self.env.step(move, update_robot_target=True)
 
     def select_robot_move(self) -> tuple[int, int] | None:
@@ -228,7 +234,10 @@ class InteractiveGomokuApp:
 
 
 def main() -> None:
-    InteractiveGomokuApp().run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="kinematic")
+    args = parser.parse_args()
+    InteractiveGomokuApp(robot_model=args.robot_model).run()
 
 
 if __name__ == "__main__":

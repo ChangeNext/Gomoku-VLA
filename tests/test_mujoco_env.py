@@ -1,4 +1,7 @@
 import unittest
+from math import dist
+
+import numpy as np
 
 from board import Player
 from simulation import GomokuMujocoEnv, build_pick_place_action
@@ -35,6 +38,95 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         names = {env.model.geom(i).name for i in range(env.model.ngeom)}
         self.assertIn("panda_link3", names)
         self.assertIn("panda_finger_left", names)
+
+    def test_menagerie_panda_loads_with_joints_and_sites(self) -> None:
+        env = GomokuMujocoEnv(robot_model="panda")
+        joint_names = {env.model.joint(i).name for i in range(env.model.njnt)}
+        site_names = {env.model.site(i).name for i in range(env.model.nsite)}
+
+        for name in env.panda_joint_names:
+            self.assertIn(name, joint_names)
+        for name in env.panda_site_names:
+            self.assertIn(name, site_names)
+        self.assertEqual(env.model.nu, 8)
+
+    def test_menagerie_panda_ik_moves_above_target_cell(self) -> None:
+        env = GomokuMujocoEnv(robot_model="panda")
+        target = env.panda_target_pose_for_cell(7, 7)
+        joint_targets = env.solve_panda_ik(target)
+
+        self.assertEqual(len(joint_targets), 7)
+        env.set_panda_joint_targets(joint_targets, gripper=1.0)
+        env.simulate(3000)
+
+        self.assertLess(dist(target, env.panda_ee_world()), 0.015)
+
+    def test_menagerie_panda_gripper_control_sets_actuator(self) -> None:
+        env = GomokuMujocoEnv(robot_model="panda")
+        env.set_panda_gripper(0.0)
+        self.assertAlmostEqual(float(env.data.ctrl[7]), 0.0)
+        env.set_panda_gripper(1.0)
+        self.assertAlmostEqual(float(env.data.ctrl[7]), 255.0)
+
+    def test_menagerie_so101_loads_with_joints_and_sites(self) -> None:
+        env = GomokuMujocoEnv(robot_model="so101")
+        joint_names = {env.model.joint(i).name for i in range(env.model.njnt)}
+        site_names = {env.model.site(i).name for i in range(env.model.nsite)}
+
+        for name in env.so101_joint_names:
+            self.assertIn(name, joint_names)
+        for name in env.so101_site_names:
+            self.assertIn(name, site_names)
+        self.assertEqual(env.model.nu, 6)
+
+    def test_menagerie_so101_base_starts_outside_play_grid(self) -> None:
+        env = GomokuMujocoEnv(robot_model="so101")
+        base_x = float(env.model.body("base").pos[0])
+
+        self.assertGreater(base_x, env.board_extent / 2.0)
+
+    def test_menagerie_so101_ik_moves_above_target_cell(self) -> None:
+        env = GomokuMujocoEnv(robot_model="so101")
+        target = env.so101_target_pose_for_cell(7, 7)
+        joint_targets = env.solve_so101_ik(target)
+
+        self.assertEqual(len(joint_targets), 5)
+        env.set_so101_joint_targets(joint_targets, gripper=1.0)
+        env.simulate(1200)
+
+        self.assertLess(dist(target, env.so101_ee_world()), 0.035)
+
+    def test_menagerie_so101_ik_keeps_gripper_vertical_over_cell(self) -> None:
+        import mujoco
+
+        env = GomokuMujocoEnv(robot_model="so101")
+        joint_targets = env.solve_so101_ik(env.so101_target_pose_for_cell(7, 7))
+        for index, addr in enumerate(env._so101_arm_qpos_addrs()):
+            env.data.qpos[addr] = joint_targets[index]
+        mujoco.mj_forward(env.model, env.data)
+
+        site_id = env.model.site("so101_ee_site").id
+        site_z = np.array(env.data.site_xmat[site_id], dtype=float).reshape(3, 3)[:, 2]
+        self.assertGreater(float(site_z[2]), 0.96)
+
+    def test_articulated_robot_cursor_color_is_neutral(self) -> None:
+        env = GomokuMujocoEnv(robot_model="so101")
+        cursor_id = env.model.geom("cursor").id
+        initial_rgba = env.model.geom_rgba[cursor_id].copy()
+
+        env.set_selection(7, 8)
+        moved_rgba = env.model.geom_rgba[cursor_id]
+
+        self.assertTrue(np.allclose(initial_rgba, moved_rgba))
+
+    def test_menagerie_so101_gripper_control_sets_actuator(self) -> None:
+        env = GomokuMujocoEnv(robot_model="so101")
+        gripper_id = env.model.actuator("gripper").id
+        low, high = env.model.actuator_ctrlrange[gripper_id]
+        env.set_so101_gripper(0.0)
+        self.assertAlmostEqual(float(env.data.ctrl[gripper_id]), float(low))
+        env.set_so101_gripper(1.0)
+        self.assertAlmostEqual(float(env.data.ctrl[gripper_id]), float(high))
 
     def test_can_set_selection_directly(self) -> None:
         env = GomokuMujocoEnv()
