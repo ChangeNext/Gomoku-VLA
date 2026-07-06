@@ -266,7 +266,7 @@ class CheckpointMoveSelector:
 
 def create_app(config: HumanEvalConfig):
     try:
-        from fastapi import FastAPI, HTTPException, Request
+        from fastapi import Body, FastAPI, HTTPException
         from fastapi.staticfiles import StaticFiles
     except ImportError as exc:
         raise RuntimeError("Install web dependencies with: pip install -e \".[learning,web]\"") from exc
@@ -275,16 +275,16 @@ def create_app(config: HumanEvalConfig):
     store = HumanEvalStore(config, CheckpointMoveSelector(config))
 
     @app.post("/api/new-game")
-    async def new_game(request: Request) -> dict[str, Any]:
-        payload = await _read_json_payload(request)
+    async def new_game(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+        payload = payload or {}
         try:
             return store.new_game(str(payload.get("player_id", "anonymous")), str(payload.get("human_color", "black")))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/move")
-    async def move(request: Request) -> dict[str, Any]:
-        payload = await _read_json_payload(request)
+    async def move(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+        payload = payload or {}
         try:
             return store.human_move(str(payload["game_id"]), int(payload["row"]), int(payload["col"]))
         except KeyError as exc:
@@ -303,14 +303,6 @@ def create_app(config: HumanEvalConfig):
     web_dir = Path(__file__).resolve().parents[1] / "web"
     app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
     return app
-
-
-async def _read_json_payload(request: Any) -> dict[str, Any]:
-    try:
-        payload = await request.json()
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
 
 
 def _parse_player(raw: str) -> Player:
