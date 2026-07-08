@@ -2,7 +2,7 @@
 
 ## MVP Scope
 
-현재 환경은 오목판, 흑/백 돌, 로봇팔을 MuJoCo scene으로 표현하는 최소 실행 버전이다. 기본 경로는 기존 scripted kinematic arm을 유지하며, `robot_model="so101"`을 선택하면 MuJoCo Menagerie의 Robot Studio SO-101 MJCF를 scene에 merge한다. `robot_model="panda"`는 비교용으로 남겨둔 full-size Franka Panda 모델이다.
+현재 환경은 오목판, 흑/백 돌, 로봇팔을 MuJoCo scene으로 표현하는 최소 실행 버전이다. 기본 경로는 `robot_model="so101"`이며, `robot_model="kinematic"`은 scripted baseline, `robot_model="panda"`는 비교용 full-size Franka Panda 모델이다.
 
 - board size: 15x15
 - cell size: 3.5 cm
@@ -22,7 +22,7 @@
 - floor and room walls
 - cup and notebook props
 - raised Gomoku board
-- scripted kinematic Franka-style arm with base, seven visual links, wrist, hand, and fingers
+- scripted kinematic Franka-style arm with base, seven visual links, wrist, hand, and fingers as an opt-in baseline
 - optional Menagerie Robot Studio SO-101 with 5 arm joints, 1 gripper joint, 6 actuators, and `so101_ee_site` / `so101_gripper_site`
 - optional Menagerie Franka Emika Panda with 7 arm joints, 2 finger joints, 8 actuators, and `panda_ee_site` / `panda_gripper_site`
 
@@ -58,9 +58,13 @@ SO-101 is the preferred tabletop arm for the board-scale manipulation stage. Men
 
 Current SO-101 control connects target cells to a hover pose above the board, solves IK for `so101_ee_site`, and sends interpolated joint targets through the arm actuators. The IK objective now includes a vertical end-effector axis term so the gripper approaches the target cell from above instead of only matching translation. In SO-101/Panda viewer modes the selection cursor uses a neutral fixed color and SO-101 disables the moving key-light shadow, which keeps WASD/arrow hover motion from looking like board color changes. The scene also uses a flat fixed skybox/haze color, and `viewer_play.py` re-applies stable viewer visualization flags on every sync so keyboard movement does not leave debug shading modes enabled. The gripper actuator is wired for open/close commands. Stone attach/detach and physical grasp quality remain later stages.
 
-The SO-101 base is placed just outside the playable grid on the board's right edge. This keeps the robot visually off the Gomoku intersections while preserving enough reach for the current 15x15 board hover targets.
+The SO-101 base is placed outside the playable grid on the board's right edge. This keeps the robot visually off the Gomoku intersections while preserving enough reach for the current 15x15 board hover targets.
 
 In `viewer_play.py`, pressing `space` / `enter` now runs an articulated place sequence for SO-101/Panda: move to hover, descend to a lower place pose, open/release the gripper while the stone is committed to the board state, then retreat to hover. This is still a visual/controller sequence; physical stone attach/detach from a supply tray remains a later stage.
+
+In `view_ai_mujoco_play.py`, checkpoint-selected moves now run a supply-to-board pick/place sequence. The scene includes a `held_stone` geom so the selected black/white stone is visible while the gripper carries it; the board state is committed at release. This is still scripted visual attachment, not a contact-stable physical grasp.
+
+The environment now tracks supply inventory and held-stone state. `grasp_supply_stone()` decrements the black/white stone supply and marks the robot as carrying that color. `commit_held_stone_to_cell()` validates that the carried color matches the current player, releases the carried stone, and commits the board move. `robot_control.RobotSafetyController` is used by the AI viewer to block unsafe pick/place attempts before executing them.
 
 ## Panda Integration
 
@@ -70,7 +74,7 @@ Menagerie assets are vendored under `third_party/mujoco_menagerie/franka_emika_p
 - actuators: Menagerie Panda's 7 arm position actuators plus gripper tendon actuator
 - sites: `panda_ee_site` and `panda_gripper_site`
 
-Current Panda control connects target cells to a hover pose above the board, solves position-only IK for `panda_ee_site`, and sends interpolated joint targets through the 7 arm actuators. The gripper tendon actuator is wired for open/close commands. Stone attach/detach and physical grasp quality remain later stages.
+Current Panda control connects supply and target points to hover/place poses, solves position-only IK for `panda_ee_site`, and sends interpolated joint targets through the 7 arm actuators. The gripper tendon actuator is wired for open/close commands. Physical grasp quality remains a later stage.
 
 The Menagerie Panda is kept at real robot scale, which makes it visually too large for the current tabletop Gomoku scene. It remains useful as a reference articulated industrial arm, but SO-101 should be used for the main tabletop pick/place path.
 

@@ -12,7 +12,7 @@ from simulation import GomokuMujocoEnv
 
 
 class ViewerController:
-    def __init__(self, dual_view: bool = True, robot_model: str = "kinematic") -> None:
+    def __init__(self, dual_view: bool = True, robot_model: str = "so101") -> None:
         self.env = GomokuMujocoEnv(robot_model=robot_model)
         self.dual_view = dual_view
         self.robot_model = robot_model
@@ -207,7 +207,7 @@ class ViewerController:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--single-view", action="store_true")
-    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="kinematic")
+    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="so101")
     args = parser.parse_args()
     ViewerController(dual_view=not args.single_view, robot_model=args.robot_model).run()
 

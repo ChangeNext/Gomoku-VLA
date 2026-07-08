@@ -15,7 +15,7 @@ from simulation import GomokuMujocoEnv
 
 
 class InteractiveGomokuApp:
-    def __init__(self, robot_model: str = "kinematic") -> None:
+    def __init__(self, robot_model: str = "so101") -> None:
         self.env = GomokuMujocoEnv(robot_model=robot_model)
         self.robot_model = robot_model
         self.human_player: Player | None = None
@@ -235,7 +235,7 @@ class InteractiveGomokuApp:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="kinematic")
+    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="so101")
     args = parser.parse_args()
     InteractiveGomokuApp(robot_model=args.robot_model).run()
 

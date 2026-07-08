@@ -25,4 +25,4 @@ web = [
 pythonpath = ["."]
 
 [tool.setuptools]
-packages = ["board", "simulation", "gomoku_ai"]
+packages = ["board", "simulation", "gomoku_ai", "robot_control", "vision"]

@@ -36,8 +36,9 @@ class GomokuMujocoEnvTest(unittest.TestCase):
     def test_robot_geoms_are_in_model(self) -> None:
         env = GomokuMujocoEnv()
         names = {env.model.geom(i).name for i in range(env.model.ngeom)}
-        self.assertIn("panda_link3", names)
-        self.assertIn("panda_finger_left", names)
+        self.assertIn("cursor", names)
+        self.assertIn("held_stone", names)
+        self.assertIn("board", names)
 
     def test_menagerie_panda_loads_with_joints_and_sites(self) -> None:
         env = GomokuMujocoEnv(robot_model="panda")
@@ -83,7 +84,7 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         env = GomokuMujocoEnv(robot_model="so101")
         base_x = float(env.model.body("base").pos[0])
 
-        self.assertGreater(base_x, env.board_extent / 2.0)
+        self.assertGreater(base_x, env.board_extent / 2.0 + env.cell_size * 3.0)
 
     def test_menagerie_so101_ik_moves_above_target_cell(self) -> None:
         env = GomokuMujocoEnv(robot_model="so101")
@@ -156,7 +157,7 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         self.assertEqual(action["action_names"], ["x", "y", "z", "qw", "qx", "qy", "qz", "gripper"])
 
     def test_can_move_robot_hand_to_scripted_pose(self) -> None:
-        env = GomokuMujocoEnv()
+        env = GomokuMujocoEnv(robot_model="kinematic")
         env.set_robot_hand_world(0.1, -0.2, 0.08, gripper=0.0)
         hand_id = env.model.geom("panda_hand").id
         left_id = env.model.geom("panda_finger_left").id
@@ -167,6 +168,22 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         self.assertAlmostEqual(float(env.model.geom_pos[hand_id][2]), 0.08)
         self.assertLess(float(env.model.geom_pos[left_id][0]), 0.1)
         self.assertGreater(float(env.model.geom_pos[right_id][0]), 0.1)
+
+    def test_held_stone_can_be_shown_and_cleared(self) -> None:
+        env = GomokuMujocoEnv()
+        held_id = env.model.geom("held_stone").id
+
+        self.assertAlmostEqual(float(env.model.geom_rgba[held_id][3]), 0.0)
+        env.set_held_stone_world(0.1, -0.2, 0.08, Player.WHITE)
+
+        self.assertAlmostEqual(float(env.model.geom_pos[held_id][0]), 0.1)
+        self.assertAlmostEqual(float(env.model.geom_pos[held_id][1]), -0.2)
+        self.assertAlmostEqual(float(env.model.geom_pos[held_id][2]), 0.08)
+        self.assertAlmostEqual(float(env.model.geom_rgba[held_id][3]), 1.0)
+        self.assertGreater(float(env.model.geom_rgba[held_id][0]), 0.8)
+
+        env.clear_held_stone()
+        self.assertAlmostEqual(float(env.model.geom_rgba[held_id][3]), 0.0)
 
 
 if __name__ == "__main__":

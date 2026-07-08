@@ -7,6 +7,9 @@ from gomoku_ai.inference import CheckpointPolicy
 from simulation import GomokuMujocoEnv, collect_mujoco_policy_episode, default_mujoco_episode_output_path
 
 
+MIN_TRAINING_IMAGE_SIZE = 224
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate MuJoCo-rendered policy episodes with scripted pick/place action traces."
@@ -26,6 +29,12 @@ def main() -> None:
     parser.add_argument("--image-width", type=int, default=640)
     parser.add_argument("--image-height", type=int, default=640)
     parser.add_argument("--cameras", default="top,iso,robot_full")
+    parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="so101")
+    parser.add_argument(
+        "--allow-low-res-smoke",
+        action="store_true",
+        help="Allow images smaller than 224px for quick pipeline smoke tests only.",
+    )
     args = parser.parse_args()
 
     if args.games <= 0:
@@ -47,6 +56,14 @@ def main() -> None:
     cameras = tuple(camera.strip() for camera in args.cameras.split(",") if camera.strip())
     if not cameras:
         parser.error("--cameras must contain at least one camera name")
+    if (
+        not args.allow_low_res_smoke
+        and (args.image_width < MIN_TRAINING_IMAGE_SIZE or args.image_height < MIN_TRAINING_IMAGE_SIZE)
+    ):
+        parser.error(
+            "--image-width and --image-height must be at least 224 for VLA collection; "
+            "use --allow-low-res-smoke only for pipeline checks"
+        )
 
     policy = CheckpointPolicy(checkpoint, device=args.device, simulations=args.simulations)
     total_records = 0
@@ -59,6 +76,7 @@ def main() -> None:
             rule_set=rule_set,
             enforce_center_opening=center_opening,
             show_robot=True,
+            robot_model=args.robot_model,
         )
         records = collect_mujoco_policy_episode(
             env,

@@ -34,6 +34,10 @@ python -m scripts.generate_mujoco_policy_episodes \
   --device auto
 ```
 
+`--robot-model` defaults to `so101`. Use `--robot-model kinematic` only for quick controller smoke tests.
+
+The default image size is `640x640` for each camera. Keep training collection at `640x640` or higher unless storage is the limiting factor. The CLI rejects images below `224x224` by default because they are only useful for smoke-testing the pipeline, not for VLA training. Use `--allow-low-res-smoke` only with tiny `--max-moves` checks.
+
 By default this writes:
 
 ```text
@@ -54,6 +58,8 @@ The action vectors use:
 ```
 
 `joint_trajectory` is `null` until a real joint/IK controller is introduced.
+
+Collection now runs the same safety and inventory interfaces used by the viewer. Each move validates supply availability, target legality, workspace bounds, and action trace bounds before execution. The environment records black/white supply counts and held-stone state before and after the move.
 
 ## Move-Level Schema
 
@@ -93,11 +99,17 @@ MuJoCo records use LeRobot/OpenVLA-friendly grouping:
 
 - `observation.language_instruction`: natural-language task, for example `place the black stone at row 7 column 8`
 - `observation.images.*`: rendered camera image paths such as `top_before`, `top_after`, `iso_before`, and `robot_full_after`
+- `observation.image_metadata`: image width, height, camera names, and whether the sample meets the minimum training resolution
 - `observation.state`: board vector, target cell, target world pose, current player, and initial robot state
 - `robot_action.action`: Cartesian action sequence with names in `robot_action.action_names`
 - `robot_action.ee_trajectory`: phase-labelled end-effector trajectory
 - `robot_action.execution_success`: whether the scripted placement matched the selected cell
 - `robot_action.placement_error_world` and `robot_action.placement_error_cell`: execution quality signals
+- `robot_action.safety`: pick/place/trace validation results
+- `robot_action.supply_before` and `robot_action.supply_after`: remaining black/white stones
+- `robot_action.attachment_mode`: currently `scripted_held_stone`
+- `observation.action`: action sequence grouped with its format and controller type for VLA loaders
+- `observation.state.board_after_flat`: post-action board state for supervised consistency checks
 
 ## Intended Pipeline
 

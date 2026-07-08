@@ -30,7 +30,7 @@ class GomokuMujocoEnv:
         stone_radius: float = 0.012,
         stone_height: float = 0.006,
         show_robot: bool = True,
-        robot_model: str = "kinematic",
+        robot_model: str = "so101",
     ) -> None:
         if robot_model not in {"kinematic", "panda", "so101"}:
             raise ValueError("robot_model must be 'kinematic', 'panda', or 'so101'")
@@ -47,6 +47,11 @@ class GomokuMujocoEnv:
         self.robot_model = robot_model
         self.selected_cell = (self.board.size // 2, self.board.size // 2)
         self.robot_target_cell: tuple[int, int] | None = None
+        self.supply_counts = {
+            Player.BLACK: (self.board.size * self.board.size + 1) // 2,
+            Player.WHITE: (self.board.size * self.board.size) // 2,
+        }
+        self.held_stone_player: Player | None = None
         self._model_xml = self._build_xml()
         self.model = mujoco.MjModel.from_xml_string(self._model_xml)
         self.data = mujoco.MjData(self.model)
@@ -63,6 +68,11 @@ class GomokuMujocoEnv:
         self.board.reset()
         self.selected_cell = (self.board.size // 2, self.board.size // 2)
         self.robot_target_cell = None
+        self.supply_counts = {
+            Player.BLACK: (self.board.size * self.board.size + 1) // 2,
+            Player.WHITE: (self.board.size * self.board.size) // 2,
+        }
+        self.held_stone_player = None
         self._apply_robot_home_keyframe()
         self._reset_runtime_geoms()
         mujoco.mj_forward(self.model, self.data)
@@ -145,6 +155,50 @@ class GomokuMujocoEnv:
             raise ValueError("set_robot_hand_world is only available for robot_model='kinematic'")
         self._set_hand_geoms(x, y, z, gripper)
         mujoco.mj_forward(self.model, self.data)
+
+    def set_held_stone_world(self, x: float, y: float, z: float, player: Player) -> None:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        if self.held_stone_player is not None and self.held_stone_player != player:
+            raise ValueError("cannot change held stone color while carrying another stone")
+        self.held_stone_player = player
+        geom_id = self._geom_ids["held_stone"]
+        self.model.geom_pos[geom_id] = np.array([x, y, z], dtype=float)
+        self.model.geom_rgba[geom_id] = self._stone_rgba(player)
+        mujoco.mj_forward(self.model, self.data)
+
+    def clear_held_stone(self) -> None:
+        self.held_stone_player = None
+        geom_id = self._geom_ids["held_stone"]
+        self.model.geom_rgba[geom_id] = self._stone_rgba(Player.EMPTY)
+        mujoco.mj_forward(self.model, self.data)
+
+    def grasp_supply_stone(self, player: Player, x: float | None = None, y: float | None = None, z: float | None = None) -> None:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        if self.held_stone_player is not None:
+            raise ValueError("robot is already holding a stone")
+        if self.supply_counts[player] <= 0:
+            raise ValueError(f"no {player.name.lower()} stones left in supply")
+        self.supply_counts[player] -= 1
+        if x is None or y is None or z is None:
+            x, y, z = self.stone_supply_world(player)
+        self.set_held_stone_world(x, y, z, player)
+
+    def commit_held_stone_to_cell(self, row: int, col: int, update_robot_target: bool = True) -> dict[str, object]:
+        if self.held_stone_player is None:
+            raise ValueError("robot is not holding a stone")
+        if self.held_stone_player != self.board.current_player:
+            raise ValueError(
+                f"held stone is {self.held_stone_player.name.lower()}, "
+                f"but current player is {self.board.current_player.name.lower()}"
+            )
+        self.clear_held_stone()
+        try:
+            return self.step((row, col), update_robot_target=update_robot_target)
+        except Exception:
+            self.supply_counts[self.board.current_player] += 1
+            raise
 
     @property
     def panda_joint_names(self) -> tuple[str, ...]:
@@ -480,7 +534,7 @@ class GomokuMujocoEnv:
                 name = f"stone_{row}_{col}"
                 geom_ids[name] = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
         robot_geom_names = ("panda_hand", "panda_finger_left", "panda_finger_right") if self.robot_model == "kinematic" else ()
-        for name in ("cursor", *robot_geom_names):
+        for name in ("cursor", "held_stone", *robot_geom_names):
             geom_ids[name] = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
         return geom_ids
 
@@ -488,7 +542,8 @@ class GomokuMujocoEnv:
         for row in range(self.board.size):
             for col in range(self.board.size):
                 geom_id = self._geom_ids[f"stone_{row}_{col}"]
-                self.model.geom_rgba[geom_id] = np.array([0.0, 0.0, 0.0, 0.0], dtype=float)
+                self.model.geom_rgba[geom_id] = self._stone_rgba(Player.EMPTY)
+        self.clear_held_stone()
         self._update_cursor_geom()
         if self.show_robot and self.robot_model == "kinematic":
             self._update_hand_geoms()
@@ -607,13 +662,14 @@ class GomokuMujocoEnv:
 
     def _set_stone_geom(self, row: int, col: int, player: Player) -> None:
         geom_id = self._geom_ids[f"stone_{row}_{col}"]
+        self.model.geom_rgba[geom_id] = self._stone_rgba(player)
+
+    def _stone_rgba(self, player: Player) -> np.ndarray:
         if player == Player.BLACK:
-            rgba = np.array([0.015, 0.014, 0.013, 1.0], dtype=float)
-        elif player == Player.WHITE:
-            rgba = np.array([0.92, 0.90, 0.85, 1.0], dtype=float)
-        else:
-            rgba = np.array([0.0, 0.0, 0.0, 0.0], dtype=float)
-        self.model.geom_rgba[geom_id] = rgba
+            return np.array([0.015, 0.014, 0.013, 1.0], dtype=float)
+        if player == Player.WHITE:
+            return np.array([0.92, 0.90, 0.85, 1.0], dtype=float)
+        return np.array([0.0, 0.0, 0.0, 0.0], dtype=float)
 
     def _build_xml(self) -> str:
         board_half = self.board_extent / 2.0 + self.cell_size * 0.7
@@ -721,6 +777,10 @@ class GomokuMujocoEnv:
         xml_parts.append(
             f"    <geom name=\"cursor\" type=\"sphere\" pos=\"0 0 0.03\" size=\"0.00900\" rgba=\"0.08 0.72 0.42 0.72\"/>"
         )
+        xml_parts.append(
+            f"    <geom name=\"held_stone\" type=\"cylinder\" pos=\"0 0 0.03\" "
+            f"size=\"{self.stone_radius:.5f} {self.stone_height:.5f}\" rgba=\"0 0 0 0\"/>"
+        )
 
         top_level_parts: list[str] = []
         if self.show_robot:
@@ -739,12 +799,31 @@ class GomokuMujocoEnv:
         return "\n".join(xml_parts)
 
     def _apply_robot_home_keyframe(self) -> None:
-        if not self.show_robot or self.robot_model != "panda":
+        if not self.show_robot:
             return
-        key_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_KEY, "home")
-        if key_id < 0:
-            raise ValueError("Panda model is missing the 'home' keyframe")
-        mujoco.mj_resetDataKeyframe(self.model, self.data, key_id)
+        if self.robot_model == "panda":
+            key_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_KEY, "home")
+            if key_id < 0:
+                raise ValueError("Panda model is missing the 'home' keyframe")
+            mujoco.mj_resetDataKeyframe(self.model, self.data, key_id)
+            return
+        if self.robot_model == "so101":
+            self._apply_so101_home_pose()
+            return
+
+    def _apply_so101_home_pose(self) -> None:
+        home_joint_targets = [1.1, -0.8, 1.2, -0.6, 0.0]
+        home_gripper = 1.0
+        qpos_addrs = self._so101_arm_qpos_addrs()
+        for index, addr in enumerate(qpos_addrs):
+            self.data.qpos[addr] = home_joint_targets[index]
+        gripper_joint_id = self._so101_joint_id("gripper")
+        gripper_qpos_addr = int(self.model.jnt_qposadr[gripper_joint_id])
+        gripper_range = self.model.jnt_range[gripper_joint_id]
+        self.data.qpos[gripper_qpos_addr] = float(gripper_range[0] + home_gripper * (gripper_range[1] - gripper_range[0]))
+        self.data.qvel[:] = 0.0
+        self.set_so101_joint_targets(home_joint_targets, gripper=home_gripper)
+        mujoco.mj_forward(self.model, self.data)
 
     def _panda_source_path(self) -> Path:
         return Path(__file__).resolve().parents[1] / "third_party" / "mujoco_menagerie" / "franka_emika_panda" / "panda.xml"
@@ -809,7 +888,7 @@ class GomokuMujocoEnv:
         base = worldbody.find("body[@name='base']")
         if base is None:
             raise ValueError("Menagerie SO-101 MJCF is missing body base")
-        base_x = self.board_extent / 2.0 + self.cell_size * 0.4
+        base_x = self.board_extent / 2.0 + self.cell_size * 3.1
         base = deepcopy(base)
         base.set("pos", f"{base_x:.5f} 0.00000 0.01200")
         base.set("quat", "0 0 0 1")
