@@ -1,5 +1,7 @@
 # Gomoku-VLA
 
+Project goal: build a Gomoku-aware VLA that reads the board, chooses a strong legal move, and then executes that move. The dataset must avoid leaking the target row/column into model inputs; selected moves, target coordinates, and robot trajectories are supervision labels or metadata, not instructions.
+
 MuJoCo 기반 오목 보드게임 로봇 시스템을 위한 초기 MVP입니다.
 
 ## 현재 포함된 것

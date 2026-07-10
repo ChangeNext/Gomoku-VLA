@@ -1,5 +1,7 @@
 # Roadmap
 
+Project goal: prioritize a Gomoku-aware VLA that sees the board, chooses a strong legal move, and executes it. Coordinate-following manipulation remains a supporting subtask, not the main objective.
+
 ## 1. MuJoCo Simulation MVP
 
 - 15x15 오목판 MuJoCo scene 생성
@@ -40,3 +42,10 @@
 - 카메라 캘리브레이션
 - 실제 board/stones 인식
 - placement error 평가
+
+## Corrected VLA Direction
+
+- Main objective: Gomoku-aware VLA that sees the board and selects a strong legal move.
+- Do not train the main VLA with coordinate-leaking prompts such as `place at row X column Y`.
+- Treat `selected_move`, `target_cell`, `target_world_xyz`, and robot trajectories as supervision labels or execution metadata.
+- Coordinate-following manipulation is an auxiliary skill only.

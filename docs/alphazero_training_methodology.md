@@ -1,5 +1,7 @@
 # AlphaZero Training Methodology
 
+Project goal: train strategic move choice for Gomoku. For VLA data, move coordinates and policy/value targets must remain labels, not text or state fields exposed as model input.
+
 ## Current Approach
 
 The Gomoku AI uses an AlphaZero-style loop:

@@ -52,6 +52,8 @@ class GomokuMujocoEnv:
             Player.WHITE: (self.board.size * self.board.size) // 2,
         }
         self.held_stone_player: Player | None = None
+        self.active_stone_player: Player | None = None
+        self.active_stone_attached = False
         self._model_xml = self._build_xml()
         self.model = mujoco.MjModel.from_xml_string(self._model_xml)
         self.data = mujoco.MjData(self.model)
@@ -73,6 +75,8 @@ class GomokuMujocoEnv:
             Player.WHITE: (self.board.size * self.board.size) // 2,
         }
         self.held_stone_player = None
+        self.active_stone_player = None
+        self.active_stone_attached = False
         self._apply_robot_home_keyframe()
         self._reset_runtime_geoms()
         mujoco.mj_forward(self.model, self.data)
@@ -139,11 +143,17 @@ class GomokuMujocoEnv:
     def stone_supply_world(self, player: Player) -> tuple[float, float, float]:
         if player not in {Player.BLACK, Player.WHITE}:
             raise ValueError("player must be BLACK or WHITE")
-        half = self.board_extent / 2.0
-        x = -half - self.cell_size * 1.15
-        y = half + self.cell_size * (0.75 if player == Player.BLACK else 1.55)
+        x, y = self.stone_bowl_world(player)
         z = 0.012 + self.stone_height
         return x, y, z
+
+    def stone_bowl_world(self, player: Player) -> tuple[float, float]:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        half = self.board_extent / 2.0
+        x = half + self.cell_size * 2.45
+        y = self.cell_size * (-3.00 if player == Player.BLACK else 3.00)
+        return x, y
 
     def robot_home_world(self) -> tuple[float, float, float]:
         return self._robot_home_world()
@@ -172,6 +182,93 @@ class GomokuMujocoEnv:
         geom_id = self._geom_ids["held_stone"]
         self.model.geom_rgba[geom_id] = self._stone_rgba(Player.EMPTY)
         mujoco.mj_forward(self.model, self.data)
+
+    def set_active_stone_world(self, x: float, y: float, z: float, player: Player) -> None:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        joint_id = self._active_stone_joint_id()
+        qpos_addr = int(self.model.jnt_qposadr[joint_id])
+        self.data.qpos[qpos_addr : qpos_addr + 7] = np.array([x, y, z, 1.0, 0.0, 0.0, 0.0], dtype=float)
+        self.data.qvel[:] = 0.0
+        self.active_stone_player = player
+        geom_id = self._geom_ids["active_stone"]
+        self.model.geom_rgba[geom_id] = self._stone_rgba(player)
+        mujoco.mj_forward(self.model, self.data)
+
+    def clear_active_stone(self) -> None:
+        joint_id = self._active_stone_joint_id()
+        qpos_addr = int(self.model.jnt_qposadr[joint_id])
+        self.data.qpos[qpos_addr : qpos_addr + 7] = np.array([0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0], dtype=float)
+        self.data.qvel[:] = 0.0
+        self.active_stone_player = None
+        self.active_stone_attached = False
+        geom_id = self._geom_ids["active_stone"]
+        self.model.geom_rgba[geom_id] = self._stone_rgba(Player.EMPTY)
+        mujoco.mj_forward(self.model, self.data)
+
+    def active_stone_world(self) -> tuple[float, float, float] | None:
+        if self.active_stone_player is None:
+            return None
+        body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "active_stone_body")
+        if body_id < 0:
+            return None
+        mujoco.mj_forward(self.model, self.data)
+        return tuple(float(value) for value in self.data.xpos[body_id])
+
+    def spawn_active_stone_at_supply(self, player: Player) -> None:
+        if player not in {Player.BLACK, Player.WHITE}:
+            raise ValueError("player must be BLACK or WHITE")
+        if self.active_stone_player is not None:
+            raise ValueError("an active stone is already present")
+        if self.supply_counts[player] <= 0:
+            raise ValueError(f"no {player.name.lower()} stones left in supply")
+        x, y, z = self.stone_supply_world(player)
+        self.supply_counts[player] -= 1
+        self.set_active_stone_world(x, y, z, player)
+
+    def attach_active_stone_to_so101_gripper(self, player: Player, *, z_offset: float = -0.014) -> None:
+        self._require_so101()
+        if self.active_stone_player is None:
+            self.spawn_active_stone_at_supply(player)
+        if self.active_stone_player != player:
+            raise ValueError("cannot attach a stone for a different player")
+        self.active_stone_attached = True
+        self.update_active_stone_at_so101_gripper(player, z_offset=z_offset)
+
+    def update_active_stone_at_so101_gripper(self, player: Player, *, z_offset: float = -0.014) -> None:
+        self._require_so101()
+        if not self.active_stone_attached:
+            return
+        x, y, z = self.so101_gripper_world()
+        self.set_active_stone_world(x, y, z + z_offset, player)
+        self.active_stone_attached = True
+
+    def release_active_stone_at(self, x: float, y: float, z: float, player: Player) -> None:
+        if self.active_stone_player != player:
+            raise ValueError("cannot release a missing or mismatched active stone")
+        self.active_stone_attached = False
+        self.set_active_stone_world(x, y, z, player)
+
+    def commit_active_stone_to_cell(self, row: int, col: int, update_robot_target: bool = True) -> dict[str, object]:
+        if self.active_stone_player is None:
+            raise ValueError("robot is not carrying an active stone")
+        if self.active_stone_player != self.board.current_player:
+            raise ValueError(
+                f"active stone is {self.active_stone_player.name.lower()}, "
+                f"but current player is {self.board.current_player.name.lower()}"
+            )
+        stone_pos = self.active_stone_world()
+        if stone_pos is None:
+            raise ValueError("active stone position is unavailable")
+        final_cell = self.world_to_board(stone_pos[0], stone_pos[1])
+        if final_cell != (row, col):
+            raise ValueError(f"active stone settled at {final_cell}, expected {(row, col)}")
+        self.clear_active_stone()
+        try:
+            return self.step((row, col), update_robot_target=update_robot_target)
+        except Exception:
+            self.supply_counts[self.board.current_player] += 1
+            raise
 
     def grasp_supply_stone(self, player: Player, x: float | None = None, y: float | None = None, z: float | None = None) -> None:
         if player not in {Player.BLACK, Player.WHITE}:
@@ -467,9 +564,13 @@ class GomokuMujocoEnv:
         self._require_so101()
         if len(joint_targets) != 5:
             raise ValueError("joint_targets must contain 5 arm joint values")
+        qpos_addrs = self._so101_arm_qpos_addrs()
         for index, actuator_id in enumerate(self._so101_arm_actuator_ids()):
             self.data.ctrl[actuator_id] = joint_targets[index]
+            self.data.qpos[qpos_addrs[index]] = joint_targets[index]
         self.set_so101_gripper(gripper)
+        self.data.qvel[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
 
     def set_so101_gripper(self, opening: float) -> None:
         self._require_so101()
@@ -477,6 +578,12 @@ class GomokuMujocoEnv:
         ctrlrange = self.model.actuator_ctrlrange[actuator_id]
         opening = min(max(opening, 0.0), 1.0)
         self.data.ctrl[actuator_id] = ctrlrange[0] + opening * (ctrlrange[1] - ctrlrange[0])
+        joint_id = self._so101_joint_id("gripper")
+        qpos_addr = int(self.model.jnt_qposadr[joint_id])
+        joint_range = self.model.jnt_range[joint_id]
+        self.data.qpos[qpos_addr] = float(joint_range[0] + opening * (joint_range[1] - joint_range[0]))
+        self.data.qvel[:] = 0.0
+        mujoco.mj_forward(self.model, self.data)
 
     def move_so101_to_cell(
         self,
@@ -534,7 +641,7 @@ class GomokuMujocoEnv:
                 name = f"stone_{row}_{col}"
                 geom_ids[name] = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
         robot_geom_names = ("panda_hand", "panda_finger_left", "panda_finger_right") if self.robot_model == "kinematic" else ()
-        for name in ("cursor", "held_stone", *robot_geom_names):
+        for name in ("cursor", "held_stone", "active_stone", *robot_geom_names):
             geom_ids[name] = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
         return geom_ids
 
@@ -544,6 +651,7 @@ class GomokuMujocoEnv:
                 geom_id = self._geom_ids[f"stone_{row}_{col}"]
                 self.model.geom_rgba[geom_id] = self._stone_rgba(Player.EMPTY)
         self.clear_held_stone()
+        self.clear_active_stone()
         self._update_cursor_geom()
         if self.show_robot and self.robot_model == "kinematic":
             self._update_hand_geoms()
@@ -641,6 +749,12 @@ class GomokuMujocoEnv:
             raise ValueError(f"SO-101 actuator is missing: {name}")
         return actuator_id
 
+    def _active_stone_joint_id(self) -> int:
+        joint_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "active_stone_free")
+        if joint_id < 0:
+            raise ValueError("active stone free joint is missing")
+        return joint_id
+
     def _so101_arm_qpos_addrs(self) -> list[int]:
         return [int(self.model.jnt_qposadr[self._so101_joint_id(name)]) for name in self.so101_arm_joint_names]
 
@@ -670,6 +784,33 @@ class GomokuMujocoEnv:
         if player == Player.WHITE:
             return np.array([0.92, 0.90, 0.85, 1.0], dtype=float)
         return np.array([0.0, 0.0, 0.0, 0.0], dtype=float)
+
+    def _stone_bowl_xml(self, player: Player) -> list[str]:
+        x, y = self.stone_bowl_world(player)
+        color_name = player.name.lower()
+        stone_rgba = " ".join(f"{value:.3f}" for value in self._stone_rgba(player))
+        reserve_offsets = [
+            (0.000, 0.000),
+            (-0.012, -0.006),
+            (0.012, -0.005),
+            (-0.007, 0.010),
+            (0.009, 0.011),
+        ]
+        parts = [
+            f"    <geom name=\"{color_name}_bowl_base\" type=\"cylinder\" pos=\"{x:.5f} {y:.5f} -0.00200\" "
+            f"size=\"0.04300 0.00800\" material=\"bowl_dark\"/>",
+            f"    <geom name=\"{color_name}_bowl_inner\" type=\"cylinder\" pos=\"{x:.5f} {y:.5f} 0.00600\" "
+            f"size=\"0.03500 0.00400\" material=\"bowl_light\"/>",
+            f"    <geom name=\"{color_name}_bowl_rim\" type=\"cylinder\" pos=\"{x:.5f} {y:.5f} 0.01000\" "
+            f"size=\"0.04500 0.00300\" material=\"bowl_dark\"/>",
+        ]
+        for index, (dx, dy) in enumerate(reserve_offsets):
+            parts.append(
+                f"    <geom name=\"{color_name}_bowl_stone_{index}\" type=\"cylinder\" "
+                f"pos=\"{x + dx:.5f} {y + dy:.5f} {0.014 + 0.0008 * index:.5f}\" "
+                f"size=\"{self.stone_radius:.5f} {self.stone_height:.5f}\" rgba=\"{stone_rgba}\"/>"
+            )
+        return parts
 
     def _build_xml(self) -> str:
         board_half = self.board_extent / 2.0 + self.cell_size * 0.7
@@ -721,6 +862,8 @@ class GomokuMujocoEnv:
             "    <material name=\"robot_black\" rgba=\"0.08 0.085 0.09 1\" specular=\"0.18\" shininess=\"0.35\"/>",
             "    <material name=\"robot_accent\" rgba=\"0.04 0.42 0.62 1\" specular=\"0.25\" shininess=\"0.45\"/>",
             "    <material name=\"franka_label\" rgba=\"0.03 0.18 0.24 1\"/>",
+            "    <material name=\"bowl_dark\" rgba=\"0.12 0.07 0.035 1\" specular=\"0.18\" shininess=\"0.25\"/>",
+            "    <material name=\"bowl_light\" rgba=\"0.62 0.36 0.16 1\" specular=\"0.20\" shininess=\"0.22\"/>",
             ]
         )
         if self.show_robot and self.robot_model == "panda":
@@ -733,6 +876,7 @@ class GomokuMujocoEnv:
             "  <worldbody>",
             f"    <light name=\"window_key\" pos=\"-0.9 -1.0 1.5\" dir=\"0.45 0.65 -1\" diffuse=\"0.95 0.88 0.76\" castshadow=\"{key_light_castshadow}\"/>",
             "    <light name=\"room_fill\" pos=\"0.8 0.7 1.1\" dir=\"-0.35 -0.2 -1\" diffuse=\"0.35 0.38 0.42\" castshadow=\"false\"/>",
+            f"    <camera name=\"board_top\" pos=\"0 0 {board_half * 3.15:.5f}\" xyaxes=\"1 0 0 0 1 0\"/>",
             f"    <camera name=\"top\" pos=\"0 0 {board_half * 4.7:.5f}\" xyaxes=\"1 0 0 0 1 0\"/>",
             f"    <camera name=\"iso\" pos=\"{board_half * 2.8:.5f} {-board_half * 3.2:.5f} {board_half * 2.6:.5f}\" xyaxes=\"0.78 0.62 0 -0.36 0.45 0.82\"/>",
             f"    <camera name=\"robot_full\" pos=\"{board_half * 4.0:.5f} {-board_half * 4.1:.5f} {board_half * 2.8:.5f}\" xyaxes=\"0.72 0.69 0 -0.31 0.32 0.90\"/>",
@@ -752,6 +896,8 @@ class GomokuMujocoEnv:
             f"    <geom name=\"board\" type=\"box\" pos=\"0 0 0\" size=\"{board_half:.5f} {board_half:.5f} {board_thickness:.5f}\" material=\"board_mat\"/>",
             ]
         )
+        xml_parts.extend(self._stone_bowl_xml(Player.BLACK))
+        xml_parts.extend(self._stone_bowl_xml(Player.WHITE))
 
         z = board_thickness + 0.0007
         for idx in range(self.board.size):
@@ -780,6 +926,14 @@ class GomokuMujocoEnv:
         xml_parts.append(
             f"    <geom name=\"held_stone\" type=\"cylinder\" pos=\"0 0 0.03\" "
             f"size=\"{self.stone_radius:.5f} {self.stone_height:.5f}\" rgba=\"0 0 0 0\"/>"
+        )
+        xml_parts.append(
+            f"    <body name=\"active_stone_body\" pos=\"0 0 -1\">"
+            f"<freejoint name=\"active_stone_free\"/>"
+            f"<geom name=\"active_stone\" type=\"cylinder\" "
+            f"size=\"{self.stone_radius:.5f} {self.stone_height:.5f}\" rgba=\"0 0 0 0\" "
+            f"mass=\"0.004\" friction=\"1.2 0.02 0.001\"/>"
+            f"</body>"
         )
 
         top_level_parts: list[str] = []

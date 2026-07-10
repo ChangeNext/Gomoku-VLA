@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+Project goal: build a Gomoku-aware VLA that reads the board, chooses a strong legal move, and then executes that move. Do not treat coordinate-following placement as the main objective. Target row/column, target world pose, and robot trajectories are labels or metadata, not model-input instructions.
+
 ## Project Structure & Module Organization
 
 This is a Python 3.10+ project for a MuJoCo-backed Gomoku simulation and future VLA robot work. Core game logic lives in `board/`, especially `board/gomoku.py`. MuJoCo environment code lives in `simulation/`, with `simulation/mujoco_gomoku_env.py` building and updating the scene. User-facing entry points are in `scripts/`: `play_cli.py`, `interactive_play.py`, `viewer_play.py`, and `render_snapshot.py`. Tests are in `tests/` and mirror the package areas they validate. Design notes and roadmap material belong in `docs/`. Top-level generated or reference assets include `gomoku_scene.xml`, `gomoku_snapshot.png`, and `gomoku_snapshot.ppm`.

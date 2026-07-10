@@ -1,5 +1,7 @@
 # Evaluation
 
+Project goal: evaluate whether the system plays Gomoku well from board perception, not whether it can follow a leaked coordinate command. Strategy metrics and robot execution metrics must be reported separately.
+
 ## Metrics
 
 - game win rate

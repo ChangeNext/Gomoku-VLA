@@ -1,5 +1,7 @@
 # MuJoCo Environment
 
+Project goal: MuJoCo provides visual observations and execution labels for a Gomoku-aware VLA. Scripted placement is data generation scaffolding; the final model should choose the move from board state instead of being told the coordinate.
+
 ## MVP Scope
 
 현재 환경은 오목판, 흑/백 돌, 로봇팔을 MuJoCo scene으로 표현하는 최소 실행 버전이다. 기본 경로는 `robot_model="so101"`이며, `robot_model="kinematic"`은 scripted baseline, `robot_model="panda"`는 비교용 full-size Franka Panda 모델이다.
@@ -12,7 +14,7 @@
 - board/world 좌표 변환 제공
 - 착수 시 모델 재생성 없이 stone rgba, cursor, gripper 위치를 갱신
 - 사람 착수는 gripper 위치를 유지하고, 로봇 착수만 gripper target을 갱신
-- `top`, `iso`, `robot_full` camera 지원
+- `board_top`, `wrist_cam`, `robot_full`, `top`, `iso` camera 지원
 
 ## Scene Design
 
@@ -26,7 +28,7 @@
 - optional Menagerie Robot Studio SO-101 with 5 arm joints, 1 gripper joint, 6 actuators, and `so101_ee_site` / `so101_gripper_site`
 - optional Menagerie Franka Emika Panda with 7 arm joints, 2 finger joints, 8 actuators, and `panda_ee_site` / `panda_gripper_site`
 
-Interactive UI는 왼쪽에 사람이 클릭해서 둘 수 있는 오목판을 두고, 오른쪽에 `robot_full` 카메라 렌더를 배치해 로봇 전체와 판 주변 맥락이 보이도록 한다.
+Interactive UI는 왼쪽에 사람이 클릭해서 둘 수 있는 오목판을 두고, 오른쪽에 `robot_full` 카메라 렌더를 배치해 로봇 전체와 판 주변 맥락이 보이도록 한다. 데이터 수집에서는 `board_top`과 SO-101 `wrist_cam`을 기본 VLA 입력으로 쓰고, `robot_full`은 QA/ablation view로 저장한다.
 
 ## Run
 
@@ -56,15 +58,19 @@ SO-101 is the preferred tabletop arm for the board-scale manipulation stage. Men
 - actuators: 5 arm position actuators plus 1 gripper position actuator
 - sites: `so101_ee_site` and `so101_gripper_site`
 
-Current SO-101 control connects target cells to a hover pose above the board, solves IK for `so101_ee_site`, and sends interpolated joint targets through the arm actuators. The IK objective now includes a vertical end-effector axis term so the gripper approaches the target cell from above instead of only matching translation. In SO-101/Panda viewer modes the selection cursor uses a neutral fixed color and SO-101 disables the moving key-light shadow, which keeps WASD/arrow hover motion from looking like board color changes. The scene also uses a flat fixed skybox/haze color, and `viewer_play.py` re-applies stable viewer visualization flags on every sync so keyboard movement does not leave debug shading modes enabled. The gripper actuator is wired for open/close commands. Stone attach/detach and physical grasp quality remain later stages.
+Current SO-101 control connects target cells to a hover pose above the board, solves IK for `so101_ee_site`, and sends interpolated joint targets through the arm actuators. The IK objective now includes a vertical end-effector axis term so the gripper approaches the target cell from above instead of only matching translation. In SO-101/Panda viewer modes the selection cursor uses a neutral fixed color and SO-101 disables the moving key-light shadow, which keeps WASD/arrow hover motion from looking like board color changes. The scene also uses a flat fixed skybox/haze color, and `viewer_play.py` re-applies stable viewer visualization flags on every sync so keyboard movement does not leave debug shading modes enabled. The gripper actuator is wired for open/close commands.
 
 The SO-101 base is placed outside the playable grid on the board's right edge. This keeps the robot visually off the Gomoku intersections while preserving enough reach for the current 15x15 board hover targets.
 
+The scene includes visible black and white stone bowls outside the Gomoku board frame on the SO-101 side of the table. `stone_supply_world(player)` points to the inside of the matching bowl, so SO-101 collection picks from a bowl instead of from a board intersection or board edge.
+
 In `viewer_play.py`, pressing `space` / `enter` now runs an articulated place sequence for SO-101/Panda: move to hover, descend to a lower place pose, open/release the gripper while the stone is committed to the board state, then retreat to hover. This is still a visual/controller sequence; physical stone attach/detach from a supply tray remains a later stage.
 
-In `view_ai_mujoco_play.py`, checkpoint-selected moves now run a supply-to-board pick/place sequence. The scene includes a `held_stone` geom so the selected black/white stone is visible while the gripper carries it; the board state is committed at release. This is still scripted visual attachment, not a contact-stable physical grasp.
+In `view_ai_mujoco_play.py`, checkpoint-selected moves run a supply-to-board pick/place sequence. The viewer still uses `held_stone` for visual clarity during interactive playback.
 
-The environment now tracks supply inventory and held-stone state. `grasp_supply_stone()` decrements the black/white stone supply and marks the robot as carrying that color. `commit_held_stone_to_cell()` validates that the carried color matches the current player, releases the carried stone, and commits the board move. `robot_control.RobotSafetyController` is used by the AI viewer to block unsafe pick/place attempts before executing them.
+In MuJoCo policy data collection, SO-101 uses an `active_stone_body` with a freejoint and a constraint-style gripper lock during carry. The active stone is spawned at the matching stone bowl, then carried to the selected board cell. The collector records joint actions, phase images, supply bowl name, grasp/place distances, final cell, and a QA contact sheet. This is suitable for stable VLA data generation and is no longer top-only visual attachment, but it is still not friction-only contact-stable grasping.
+
+The environment now tracks supply inventory, held-stone state for viewer playback, and active-stone state for SO-101 collection. `grasp_supply_stone()` / `commit_held_stone_to_cell()` support the visual viewer path. `spawn_active_stone_at_supply()` / `attach_active_stone_to_so101_gripper()` / `commit_active_stone_to_cell()` support the SO-101 data collection path. `robot_control.RobotSafetyController` is used to block unsafe pick/place attempts before executing them.
 
 ## Panda Integration
 

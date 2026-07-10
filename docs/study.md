@@ -1,5 +1,7 @@
 # Study Notes
 
+Project goal: the main research target is a Gomoku-aware VLA. The model should infer strategy from board perception; commanded-coordinate placement is only an auxiliary execution skill.
+
 ## Core Concepts
 
 - MuJoCo: 물리 기반 로봇 시뮬레이션과 렌더링

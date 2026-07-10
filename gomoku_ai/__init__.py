@@ -3,6 +3,7 @@ from .episode_recorder import EpisodeStepRecord, append_episode_record, default_
 from .inference import CheckpointPolicy, MovePrediction, predict_move, resolve_device
 from .mcts import MCTSConfig, run_mcts, run_mcts_batch
 from .model import PolicyValueModel, UniformPolicyValueModel
+from .openvla_oft_dataset import OpenVLAOFTManifestDataset, export_openvla_oft_multiview_dataset
 from .replay_buffer import ReplayBuffer, TrainingBatch
 from .self_play import SelfPlayConfig, SelfPlaySample, generate_self_play_game, generate_self_play_games
 from .tactics import find_forced_block, find_immediate_win, select_tactical_move
@@ -12,6 +13,7 @@ __all__ = [
     "CheckpointPolicy",
     "EpisodeStepRecord",
     "MovePrediction",
+    "OpenVLAOFTManifestDataset",
     "PolicyValueModel",
     "ReplayBuffer",
     "SelfPlayConfig",
@@ -22,6 +24,7 @@ __all__ = [
     "append_episode_record",
     "default_episode_output_path",
     "encode_board",
+    "export_openvla_oft_multiview_dataset",
     "find_forced_block",
     "find_immediate_win",
     "generate_self_play_game",

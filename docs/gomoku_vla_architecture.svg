@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1650" height="1030" viewBox="0 0 1650 1030" role="img" aria-labelledby="title desc">
+  <title id="title">Autoregressive OpenVLA Gomoku Architecture</title>
+  <desc id="desc">A paper-style diagram showing a single OpenVLA decoder that emits a move token followed by action tokens for Gomoku-aware robot play.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#242424"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2f5f85"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#2f7658"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L11,4 L0,8 Z" fill="#9a3f35"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfaf7; }
+      .panel { fill: #ffffff; stroke: #cbc4b7; stroke-width: 1.5; }
+      .panel-soft { fill: #f7f2e8; stroke: #cbc4b7; stroke-width: 1.5; }
+      .box { fill: #fffdf8; stroke: #222; stroke-width: 1.7; }
+      .box-blue { fill: #eaf2f7; stroke: #2f5f85; stroke-width: 1.8; }
+      .box-green { fill: #eaf5ef; stroke: #2f7658; stroke-width: 1.8; }
+      .box-red { fill: #faece8; stroke: #9a3f35; stroke-width: 1.8; }
+      .box-yellow { fill: #fff3c5; stroke: #8c6914; stroke-width: 1.8; }
+      .box-gray { fill: #f1f1ef; stroke: #6b665f; stroke-width: 1.5; }
+      .line { fill: none; stroke: #242424; stroke-width: 2.3; marker-end: url(#arrow); }
+      .line-blue { fill: none; stroke: #2f5f85; stroke-width: 2.4; marker-end: url(#arrowBlue); }
+      .line-green { fill: none; stroke: #2f7658; stroke-width: 2.4; marker-end: url(#arrowGreen); }
+      .line-red { fill: none; stroke: #9a3f35; stroke-width: 2.4; marker-end: url(#arrowRed); }
+      .dash { fill: none; stroke: #8a8379; stroke-width: 1.6; stroke-dasharray: 8 7; }
+      .title { font: 700 34px Georgia, serif; fill: #161616; }
+      .subtitle { font: 16px Georgia, serif; fill: #5d574f; }
+      .section { font: 700 18px Georgia, serif; fill: #161616; }
+      .label { font: 700 17px Georgia, serif; fill: #161616; }
+      .small { font: 13px Georgia, serif; fill: #5d574f; }
+      .caption { font: 12px Georgia, serif; fill: #665f56; }
+      .mono { font: 13px Consolas, "Cascadia Code", monospace; fill: #222; }
+      .mono-small { font: 11px Consolas, "Cascadia Code", monospace; fill: #4c4740; }
+      .ok { font: 700 13px Georgia, serif; fill: #2f7658; }
+      .warn { font: 700 13px Georgia, serif; fill: #9a3f35; }
+      .board-line { stroke: #191919; stroke-width: 1; }
+      .stone-b { fill: #161616; }
+      .stone-w { fill: #f6f0dc; stroke: #827b70; stroke-width: 1; }
+      .token-move { fill: #eaf5ef; stroke: #2f7658; stroke-width: 1.6; }
+      .token-action { fill: #fff3c5; stroke: #8c6914; stroke-width: 1.6; }
+      .token-end { fill: #f1f1ef; stroke: #6b665f; stroke-width: 1.4; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1650" height="1030"/>
+  <text class="title" x="58" y="62">Autoregressive OpenVLA for Gomoku-aware Robot Play</text>
+  <text class="subtitle" x="58" y="91">A single decoder first emits the strategic move token, then emits the robot action tokens that execute that move.</text>
+
+  <rect class="panel-soft" x="48" y="126" width="330" height="702" rx="4"/>
+  <text class="section" x="70" y="160">Model Inputs</text>
+  <text class="caption" x="70" y="183">The model must infer the move. No answer coordinate is given.</text>
+
+  <rect class="box-blue" x="78" y="214" width="270" height="142" rx="4"/>
+  <text class="label" x="98" y="244">Vision Input</text>
+  <text class="mono" x="98" y="271">top_before image</text>
+  <text class="mono-small" x="98" y="294">later: calibrated real camera frame</text>
+  <g transform="translate(254,233)">
+    <rect x="0" y="0" width="72" height="72" fill="#f0ca5d" stroke="#171717" stroke-width="1.1"/>
+    <g class="board-line">
+      <line x1="9" y1="0" x2="9" y2="72"/>
+      <line x1="24" y1="0" x2="24" y2="72"/>
+      <line x1="39" y1="0" x2="39" y2="72"/>
+      <line x1="54" y1="0" x2="54" y2="72"/>
+      <line x1="69" y1="0" x2="69" y2="72"/>
+      <line x1="0" y1="9" x2="72" y2="9"/>
+      <line x1="0" y1="24" x2="72" y2="24"/>
+      <line x1="0" y1="39" x2="72" y2="39"/>
+      <line x1="0" y1="54" x2="72" y2="54"/>
+      <line x1="0" y1="69" x2="72" y2="69"/>
+    </g>
+    <circle class="stone-b" cx="39" cy="39" r="5"/>
+    <circle class="stone-w" cx="54" cy="39" r="5"/>
+    <circle class="stone-b" cx="54" cy="24" r="5"/>
+    <circle class="stone-w" cx="24" cy="54" r="5"/>
+  </g>
+
+  <rect class="box-blue" x="78" y="388" width="270" height="126" rx="4"/>
+  <text class="label" x="98" y="418">Text Prompt</text>
+  <text class="mono" x="98" y="446">"Play the strongest legal</text>
+  <text class="mono" x="98" y="467"> Gomoku move as black."</text>
+  <text class="mono-small" x="98" y="492">no row/column in prompt</text>
+
+  <rect class="box-blue" x="78" y="546" width="270" height="114" rx="4"/>
+  <text class="label" x="98" y="576">Optional State</text>
+  <text class="mono" x="98" y="604">board_before_flat</text>
+  <text class="mono-small" x="98" y="628">simulation-only auxiliary input</text>
+
+  <rect class="box-red" x="78" y="694" width="270" height="82" rx="4"/>
+  <text class="label" x="98" y="723">Forbidden Inputs</text>
+  <text class="mono-small" x="98" y="748">selected_move, target_cell, top_after</text>
+
+  <rect class="panel" x="430" y="126" width="486" height="702" rx="4"/>
+  <text class="section" x="452" y="160">OpenVLA Backbone</text>
+  <text class="caption" x="452" y="183">Vision-language context for one autoregressive decoder.</text>
+
+  <rect class="box" x="474" y="228" width="178" height="92" rx="4"/>
+  <text class="label" x="496" y="259">Vision Encoder</text>
+  <text class="mono-small" x="496" y="284">DINOv2 + SigLIP</text>
+  <text class="small" x="496" y="304">board and stones</text>
+
+  <rect class="box" x="698" y="228" width="178" height="92" rx="4"/>
+  <text class="label" x="720" y="259">Text Encoder</text>
+  <text class="mono-small" x="720" y="284">Llama tokens</text>
+  <text class="small" x="720" y="304">task and player color</text>
+
+  <rect class="box" x="586" y="380" width="178" height="92" rx="4"/>
+  <text class="label" x="608" y="411">State Encoder</text>
+  <text class="mono-small" x="608" y="436">optional MLP</text>
+  <text class="small" x="608" y="456">board_before_flat</text>
+
+  <rect class="box-yellow" x="546" y="548" width="256" height="94" rx="4"/>
+  <text class="label" x="578" y="581">Context Fusion</text>
+  <text class="small" x="578" y="607">shared latent prompt context</text>
+  <text class="small" x="578" y="626">for strategic action generation</text>
+
+  <rect class="box-green" x="536" y="704" width="276" height="74" rx="4"/>
+  <text class="label" x="568" y="735">Single AR Decoder</text>
+  <text class="mono-small" x="568" y="758">move token -> action tokens</text>
+
+  <path class="line-blue" d="M348 285 C410 285, 432 274, 474 274"/>
+  <path class="line-blue" d="M348 451 C492 451, 538 274, 698 274"/>
+  <path class="line-blue" d="M348 603 C462 603, 506 426, 586 426"/>
+  <path class="line" d="M563 320 C580 406, 598 488, 620 548"/>
+  <path class="line" d="M787 320 C760 410, 734 492, 704 548"/>
+  <path class="line" d="M675 472 L675 548"/>
+  <path class="line" d="M674 642 L674 704"/>
+
+  <rect class="panel-soft" x="972" y="126" width="548" height="702" rx="4"/>
+  <text class="section" x="994" y="160">Autoregressive Output Sequence</text>
+  <text class="caption" x="994" y="183">One decoder, one sequence, strategy first and execution second.</text>
+
+  <rect class="box-green" x="1010" y="224" width="474" height="130" rx="4"/>
+  <text class="label" x="1034" y="254">Step 1: Strategic Move Token</text>
+  <text class="mono" x="1034" y="283">&lt;MOVE_112&gt;</text>
+  <text class="mono-small" x="1034" y="310">225-way token for a 15x15 board cell</text>
+  <text class="small" x="1034" y="332">trained from AlphaZero/MCTS selected_move and policy_probs</text>
+
+  <rect class="box-yellow" x="1010" y="406" width="474" height="150" rx="4"/>
+  <text class="label" x="1034" y="436">Step 2: Robot Action Tokens</text>
+  <text class="mono" x="1034" y="465">&lt;ACT_034&gt; &lt;ACT_119&gt; &lt;ACT_042&gt; ... &lt;EOS&gt;</text>
+  <text class="mono-small" x="1034" y="492">tokens decode to SO-101 end-effector or joint action chunks</text>
+  <text class="small" x="1034" y="516">conditioned on the model's own preceding move token</text>
+  <text class="small" x="1034" y="536">trained by behavior cloning from scripted/real robot_action</text>
+
+  <rect class="box-gray" x="1010" y="608" width="474" height="94" rx="4"/>
+  <text class="label" x="1034" y="638">Optional Auxiliary Value</text>
+  <text class="mono-small" x="1034" y="665">shared latent or first move hidden state -> value/value_target</text>
+  <text class="small" x="1034" y="685">not part of the generated command sequence</text>
+
+  <rect class="box-red" x="1086" y="736" width="322" height="58" rx="4"/>
+  <text class="label" x="1110" y="764">Safety Gate Before Execution</text>
+  <text class="mono-small" x="1110" y="782">legal move, workspace, collision, emergency stop</text>
+
+  <path class="line-green" d="M812 741 C910 741, 900 289, 1010 289"/>
+  <path class="line" d="M1247 354 L1247 406"/>
+  <path class="line" d="M1247 556 L1247 608"/>
+  <path class="line-red" d="M1247 702 L1247 736"/>
+
+  <g transform="translate(1010,862)">
+    <rect class="token-move" x="0" y="0" width="112" height="40" rx="4"/>
+    <text class="mono-small" x="19" y="25">&lt;MOVE_112&gt;</text>
+    <rect class="token-action" x="128" y="0" width="92" height="40" rx="4"/>
+    <text class="mono-small" x="145" y="25">&lt;ACT_034&gt;</text>
+    <rect class="token-action" x="236" y="0" width="92" height="40" rx="4"/>
+    <text class="mono-small" x="253" y="25">&lt;ACT_119&gt;</text>
+    <rect class="token-action" x="344" y="0" width="92" height="40" rx="4"/>
+    <text class="mono-small" x="361" y="25">&lt;ACT_042&gt;</text>
+    <rect class="token-end" x="452" y="0" width="62" height="40" rx="4"/>
+    <text class="mono-small" x="469" y="25">&lt;EOS&gt;</text>
+  </g>
+
+  <rect class="panel-soft" x="48" y="868" width="874" height="110" rx="4"/>
+  <text class="section" x="72" y="898">Training Strategy</text>
+  <text class="ok" x="72" y="924">1. Extend tokenizer with &lt;MOVE_0&gt; ... &lt;MOVE_224&gt; plus robot action tokens.</text>
+  <text class="ok" x="72" y="948">2. Train sequence loss: move_token_loss + lambda_action * action_token_loss + lambda_value * value_loss.</text>
+  <text class="warn" x="72" y="972">3. During inference, the action tokens are generated after the model's own move token.</text>
+
+  <rect class="panel" x="972" y="34" width="548" height="58" rx="4"/>
+  <text class="caption" x="994" y="58">Final objective: one VLA chooses the Gomoku move and emits the robot action to play it.</text>
+  <text class="caption" x="994" y="78">This preserves OpenVLA's autoregressive action-token spirit while making strategy explicit.</text>
+</svg>

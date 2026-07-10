@@ -139,8 +139,26 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         black_supply = env.stone_supply_world(Player.BLACK)
         white_supply = env.stone_supply_world(Player.WHITE)
         self.assertNotEqual(black_supply, white_supply)
+        board_half = env.board_extent / 2.0 + env.cell_size * 0.7
+        self.assertGreater(abs(black_supply[0]), board_half)
+        self.assertGreater(abs(white_supply[0]), board_half)
         with self.assertRaises(ValueError):
             env.world_to_board(black_supply[0], black_supply[1])
+
+    def test_scene_contains_black_and_white_stone_bowls(self) -> None:
+        env = GomokuMujocoEnv()
+
+        for name in (
+            "black_bowl_base",
+            "black_bowl_inner",
+            "black_bowl_rim",
+            "black_bowl_stone_0",
+            "white_bowl_base",
+            "white_bowl_inner",
+            "white_bowl_rim",
+            "white_bowl_stone_0",
+        ):
+            self.assertGreaterEqual(env.model.geom(name).id, 0)
 
     def test_scripted_pick_place_action_has_lerobot_ready_action_vectors(self) -> None:
         env = GomokuMujocoEnv()

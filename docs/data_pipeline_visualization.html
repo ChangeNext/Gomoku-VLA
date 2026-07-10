@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gomoku VLA Data Pipeline</title>
+  <style>
+    :root {
+      --ink: #161514;
+      --muted: #68625b;
+      --paper: #f7f4ed;
+      --panel: #fffaf0;
+      --line: #d6cab6;
+      --board: #f0ca5d;
+      --black: #171717;
+      --white: #f6f1df;
+      --robot: #e1b21f;
+      --green: #2f7d5b;
+      --red: #b54a3a;
+      --blue: #315f7f;
+      --shadow: 0 18px 45px rgba(38, 31, 22, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(240, 202, 93, 0.18), transparent 36%),
+        linear-gradient(225deg, rgba(49, 95, 127, 0.14), transparent 38%),
+        var(--paper);
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    main {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 42px 0 58px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 28px;
+      align-items: center;
+      min-height: 360px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 7vw, 92px);
+      line-height: 0.9;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 27px;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      font-size: 17px;
+    }
+
+    code {
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: rgba(255, 250, 240, 0.72);
+      font-family: "Cascadia Code", Consolas, monospace;
+      font-size: 0.88em;
+    }
+
+    .hero-copy {
+      max-width: 720px;
+    }
+
+    .hero-copy p {
+      max-width: 600px;
+      margin-top: 20px;
+    }
+
+    .hero-board {
+      position: relative;
+      min-height: 340px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, #fff8df, #e8d18d);
+      box-shadow: var(--shadow);
+    }
+
+    .board {
+      width: min(310px, 78vw);
+      aspect-ratio: 1;
+      margin: 0 auto;
+      background:
+        linear-gradient(var(--ink) 1px, transparent 1px),
+        linear-gradient(90deg, var(--ink) 1px, transparent 1px),
+        var(--board);
+      background-size: calc(100% / 14) calc(100% / 14);
+      border: 12px solid #ffe96c;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+      position: relative;
+    }
+
+    .stone {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+    }
+
+    .stone.black {
+      background: radial-gradient(circle at 35% 30%, #444, #050505 72%);
+    }
+
+    .stone.white {
+      background: radial-gradient(circle at 35% 30%, #fff, #d9d0b6 72%);
+      border: 1px solid #b8ad92;
+    }
+
+    .robot-arm {
+      position: absolute;
+      right: 7%;
+      top: 20%;
+      width: 110px;
+      height: 190px;
+      transform: rotate(26deg);
+    }
+
+    .robot-arm span {
+      display: block;
+      position: absolute;
+      background: var(--robot);
+      border: 2px solid #8d6b10;
+      box-shadow: 0 8px 18px rgba(55, 41, 8, 0.18);
+    }
+
+    .robot-base {
+      width: 76px;
+      height: 34px;
+      right: 4px;
+      bottom: 0;
+    }
+
+    .robot-link-a {
+      width: 32px;
+      height: 112px;
+      right: 28px;
+      bottom: 24px;
+      transform: rotate(-16deg);
+      transform-origin: bottom;
+    }
+
+    .robot-link-b {
+      width: 28px;
+      height: 92px;
+      right: 58px;
+      top: 0;
+      transform: rotate(24deg);
+      transform-origin: bottom;
+    }
+
+    .robot-tip {
+      width: 48px;
+      height: 12px;
+      right: 74px;
+      top: 72px;
+    }
+
+    .section {
+      margin-top: 34px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      background: rgba(255, 250, 240, 0.78);
+      box-shadow: var(--shadow);
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      margin-top: 22px;
+    }
+
+    .node {
+      min-height: 128px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      position: relative;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      right: -14px;
+      top: 50%;
+      width: 14px;
+      border-top: 2px solid var(--line);
+    }
+
+    .node:last-child::after {
+      display: none;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #ece3cf;
+      color: #4d463d;
+      font: 12px "Cascadia Code", Consolas, monospace;
+      text-transform: uppercase;
+    }
+
+    .node strong {
+      display: block;
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .node small {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .field-box {
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.46);
+    }
+
+    .field-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .field {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 10px;
+      border: 1px solid #e2d6c0;
+      background: rgba(255, 250, 240, 0.7);
+      font: 13px "Cascadia Code", Consolas, monospace;
+    }
+
+    .field span:last-child {
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .capture-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 18px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .capture-row:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .files {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .file {
+      padding: 8px 10px;
+      border: 1px solid #cabda7;
+      background: #fffdf5;
+      font: 12px "Cascadia Code", Consolas, monospace;
+    }
+
+    .phase-strip {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(78px, 1fr));
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .phase {
+      min-height: 68px;
+      padding: 10px 8px;
+      border: 1px solid var(--line);
+      background: #fffdf5;
+      text-align: center;
+      font: 12px "Cascadia Code", Consolas, monospace;
+    }
+
+    .phase.active {
+      background: #f7dfa0;
+      border-color: #9a7520;
+    }
+
+    .schema {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .json-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: #1f211f;
+      color: #e9eadf;
+      overflow: auto;
+      min-height: 320px;
+      font: 13px/1.6 "Cascadia Code", Consolas, monospace;
+      white-space: pre;
+    }
+
+    .json-card b {
+      color: #f4cf6f;
+      font-weight: 400;
+    }
+
+    .json-card i {
+      color: #8ec5a8;
+      font-style: normal;
+    }
+
+    .json-card em {
+      color: #95c4df;
+      font-style: normal;
+    }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 20px;
+    }
+
+    .status {
+      padding: 16px;
+      border-left: 5px solid var(--green);
+      background: rgba(255, 255, 255, 0.48);
+    }
+
+    .status.warn {
+      border-left-color: var(--red);
+    }
+
+    .status.info {
+      border-left-color: var(--blue);
+    }
+
+    .status strong {
+      display: block;
+      margin-bottom: 7px;
+    }
+
+    .status span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 920px) {
+      header,
+      .grid-2,
+      .schema {
+        grid-template-columns: 1fr;
+      }
+
+      .pipeline,
+      .grid-3,
+      .status-row {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .phase-strip {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .node::after {
+        display: none;
+      }
+    }
+
+    @media (max-width: 580px) {
+      main {
+        width: min(100vw - 22px, 1180px);
+        padding-top: 24px;
+      }
+
+      .section {
+        padding: 18px;
+      }
+
+      .pipeline,
+      .grid-3,
+      .status-row,
+      .capture-row {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-board {
+        min-height: 300px;
+      }
+
+      .robot-arm {
+        right: -4%;
+        transform: rotate(28deg) scale(0.82);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="hero-copy">
+        <h1>Gomoku VLA Data Shape</h1>
+        <p>
+          한 줄의 JSONL record는 오목 한 수를 의미한다. 현재 설계는 전략 모델이 고른 move,
+          MuJoCo 이미지, scripted robot action, 안전 검증을 한 묶음으로 저장한다.
+        </p>
+      </div>
+      <div class="hero-board" aria-label="오목판과 로봇팔 데이터 수집 개념도">
+        <div class="board">
+          <span class="stone black" style="left: 50%; top: 50%"></span>
+          <span class="stone white" style="left: 57.1%; top: 50%"></span>
+          <span class="stone black" style="left: 57.1%; top: 42.9%"></span>
+          <span class="stone white" style="left: 42.9%; top: 57.1%"></span>
+        </div>
+        <div class="robot-arm">
+          <span class="robot-base"></span>
+          <span class="robot-link-a"></span>
+          <span class="robot-link-b"></span>
+          <span class="robot-tip"></span>
+        </div>
+      </div>
+    </header>
+
+    <section class="section">
+      <h2>One Move Pipeline</h2>
+      <p>한 판 전체는 여러 step의 누적이고, 각 step은 돌 하나를 놓는 record다.</p>
+      <div class="pipeline">
+        <div class="node">
+          <span class="tag">state</span>
+          <strong>board_before</strong>
+          <small>현재 15x15 grid와 current player를 읽는다.</small>
+        </div>
+        <div class="node">
+          <span class="tag">policy</span>
+          <strong>strategy label</strong>
+          <small>CheckpointPolicy가 row, col, policy_probs, value를 만든다.</small>
+        </div>
+        <div class="node">
+          <span class="tag">vision</span>
+          <strong>images</strong>
+          <small>top, iso, robot_full 카메라의 before/after 렌더를 저장한다.</small>
+        </div>
+        <div class="node">
+          <span class="tag">action</span>
+          <strong>robot_action</strong>
+          <small>pick/place pose와 Cartesian action sequence를 기록한다.</small>
+        </div>
+        <div class="node">
+          <span class="tag">check</span>
+          <strong>safety + result</strong>
+          <small>workspace, supply, legality, placement success를 검증한다.</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Capture Modes</h2>
+      <div class="capture-row">
+        <div>
+          <h3>Default</h3>
+          <p>가벼운 move-level dataset.</p>
+        </div>
+        <div class="files">
+          <span class="file">step_000_top_before.png</span>
+          <span class="file">step_000_top_after.png</span>
+          <span class="file">step_000_iso_before.png</span>
+          <span class="file">step_000_iso_after.png</span>
+          <span class="file">step_000_robot_full_before.png</span>
+          <span class="file">step_000_robot_full_after.png</span>
+        </div>
+      </div>
+      <div class="capture-row">
+        <div>
+          <h3>Phase Images</h3>
+          <p><code>--capture-phase-images</code>를 켰을 때만 추가된다.</p>
+        </div>
+        <div>
+          <div class="phase-strip">
+            <div class="phase">home</div>
+            <div class="phase">pre_pick</div>
+            <div class="phase active">pick</div>
+            <div class="phase active">grasp</div>
+            <div class="phase active">lift</div>
+            <div class="phase active">pre_place</div>
+            <div class="phase active">place</div>
+            <div class="phase active">release</div>
+            <div class="phase">retreat</div>
+          </div>
+          <p style="margin-top: 14px;">
+            예: <code>step_000_top_phase_003_grasp.png</code>,
+            <code>step_000_robot_full_phase_006_place.png</code>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Record Layout</h2>
+      <div class="grid-3">
+        <div class="field-box">
+          <h3>Policy Label</h3>
+          <div class="field-list">
+            <div class="field"><span>selected_move</span><span>[row, col]</span></div>
+            <div class="field"><span>action_index</span><span>flat cell</span></div>
+            <div class="field"><span>policy_probs</span><span>225 floats</span></div>
+            <div class="field"><span>value</span><span>win estimate</span></div>
+          </div>
+        </div>
+        <div class="field-box">
+          <h3>Observation</h3>
+          <div class="field-list">
+            <div class="field"><span>images</span><span>before/after</span></div>
+            <div class="field"><span>phase_images</span><span>optional</span></div>
+            <div class="field"><span>state.board_flat</span><span>before</span></div>
+            <div class="field"><span>state.board_after_flat</span><span>after</span></div>
+          </div>
+        </div>
+        <div class="field-box">
+          <h3>Execution</h3>
+          <div class="field-list">
+            <div class="field"><span>robot_action.action</span><span>sequence</span></div>
+            <div class="field"><span>ee_trajectory</span><span>phases</span></div>
+            <div class="field"><span>safety</span><span>pick/place/trace</span></div>
+            <div class="field"><span>execution_success</span><span>true/false</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="schema">
+        <div class="json-card">{
+  <b>"game_id"</b>: <i>"best-mujoco-1"</i>,
+  <b>"step"</b>: <em>0</em>,
+  <b>"board_before"</b>: [[0, 0, ...]],
+  <b>"board_after"</b>: [[0, 0, ...]],
+  <b>"current_player"</b>: <i>"black"</i>,
+  <b>"selected_move"</b>: [7, 7],
+  <b>"policy_probs"</b>: [0.0, ...],
+  <b>"value"</b>: <em>0.42</em>,
+  <b>"legal"</b>: true,
+  <b>"terminal"</b>: false,
+  <b>"robot_action"</b>: {...},
+  <b>"observation"</b>: {...}
+}</div>
+        <div class="json-card">{
+  <b>"observation"</b>: {
+    <b>"language_instruction"</b>: <i>"play the strongest legal Gomoku move as black"</i>,
+    <b>"model_input"</b>: {
+      <b>"images"</b>: { <b>"top_before"</b>: <i>".../step_000_top_before.png"</i> },
+      <b>"state"</b>: {
+        <b>"board_flat"</b>: [...],
+        <b>"current_player_value"</b>: <em>1</em>
+      }
+    },
+    <b>"images"</b>: {
+      <b>"top_before"</b>: <i>".../step_000_top_before.png"</i>,
+      <b>"top_after"</b>: <i>".../step_000_top_after.png"</i>
+    },
+    <b>"phase_images"</b>: [
+      { <b>"phase"</b>: <i>"home"</i>, <b>"images"</b>: {...} },
+      { <b>"phase"</b>: <i>"pick"</i>, <b>"images"</b>: {...} }
+    ],
+    <b>"supervision"</b>: {
+      <b>"target_sequence"</b>: [
+        <i>"&lt;MOVE_112&gt;"</i>,
+        <i>"&lt;ACT_034&gt;"</i>,
+        <i>"&lt;ACT_119&gt;"</i>,
+        <i>"&lt;EOS&gt;"</i>
+      ],
+      <b>"strategy"</b>: {
+        <b>"selected_move"</b>: [7, 7],
+        <b>"policy_probs"</b>: [...]
+      },
+      <b>"execution"</b>: {
+        <b>"target_cell"</b>: [7, 7],
+        <b>"action"</b>: {...}
+      }
+    }
+  }
+}</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Training Flags</h2>
+      <div class="status-row">
+        <div class="status">
+          <strong>training_usable</strong>
+          <span>이미지 크기가 최소 224x224 이상이면 true.</span>
+        </div>
+        <div class="status info">
+          <strong>phase_images_enabled</strong>
+          <span>phase 이미지 옵션을 켠 record인지 표시.</span>
+        </div>
+        <div class="status">
+          <strong>safety.ok</strong>
+          <span>pick, place, trace 검증을 모두 통과했는지 표시.</span>
+        </div>
+        <div class="status warn">
+          <strong>vision pending</strong>
+          <span>다음 작업은 top image에서 board grid를 복원해 record에 검증 결과를 붙이는 것.</span>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

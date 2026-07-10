@@ -1,5 +1,7 @@
 # Architecture
 
+Project goal: build a Gomoku-aware VLA that infers the next strong legal move from visual board state and then executes it. Target row/column, target world pose, and robot trajectory are supervision labels or downstream execution data, not model-input hints.
+
 ## Modules
 
 - `board/`: board matrix, 좌표 검증, 턴 관리, 자유룰/렌주 승리와 금수 판정
@@ -29,4 +31,4 @@
 6. evaluator match가 기준을 넘으면 `best.pt`로 승격한다.
 7. 학습된 policy가 선택한 `(row, col)`은 이후 `simulation.GomokuMujocoEnv.step()` 또는 로봇 제어 모듈로 전달한다.
 
-카메라 인식과 로봇팔 제어는 AlphaZero 전략 학습과 분리한다. 최종 통합에서는 `camera image -> board state -> policy -> row,col -> robot action` 순서로 연결한다.
+카메라 인식과 로봇팔 제어는 AlphaZero 전략 학습과 분리한다. 최종 통합에서는 `camera image -> Gomoku-aware VLA/policy -> selected move label -> robot execution label` 순서로 연결한다. VLA 입력에는 정답 좌표를 넣지 않는다.

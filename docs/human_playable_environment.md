@@ -1,5 +1,7 @@
 # Human-playable Environment
 
+Project goal: human and viewer tools support a Gomoku-aware VLA pipeline. Human clicks and AI moves are useful for evaluation, but VLA training inputs must not include the answer coordinate.
+
 ## Current Viewer MVP
 
 ```bash

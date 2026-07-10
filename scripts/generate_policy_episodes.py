@@ -14,6 +14,18 @@ def main() -> None:
     parser.add_argument("--games", type=int, default=1)
     parser.add_argument("--simulations", type=int, default=64)
     parser.add_argument("--device", default="auto")
+    parser.add_argument(
+        "--sample-moves",
+        action="store_true",
+        help="Sample teacher moves from the MCTS policy instead of always taking argmax.",
+    )
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--temperature-moves", type=int, default=0)
+    parser.add_argument("--late-temperature", type=float, default=0.0)
+    parser.add_argument("--root-noise", action="store_true")
+    parser.add_argument("--root-dirichlet-alpha", type=float, default=0.3)
+    parser.add_argument("--root-exploration-fraction", type=float, default=0.25)
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--win-length", type=int, default=5)
     parser.add_argument("--rule-set", choices=("free", "renju"))
     parser.add_argument("--center-opening", action="store_true")
@@ -24,6 +36,16 @@ def main() -> None:
 
     if args.games <= 0:
         parser.error("--games must be positive")
+    if args.temperature < 0.0:
+        parser.error("--temperature must be non-negative")
+    if args.late_temperature < 0.0:
+        parser.error("--late-temperature must be non-negative")
+    if args.temperature_moves < 0:
+        parser.error("--temperature-moves must be non-negative")
+    if args.root_dirichlet_alpha <= 0.0:
+        parser.error("--root-dirichlet-alpha must be positive")
+    if not 0.0 <= args.root_exploration_fraction <= 1.0:
+        parser.error("--root-exploration-fraction must be between 0 and 1")
     if args.center_opening and args.no_center_opening:
         parser.error("--center-opening and --no-center-opening cannot be used together")
 
@@ -38,7 +60,19 @@ def main() -> None:
         enforce_center_opening = False
 
     output_jsonl = Path(args.output_jsonl) if args.output_jsonl else default_episode_output_path(checkpoint)
-    policy = CheckpointPolicy(checkpoint, device=args.device, simulations=args.simulations)
+    policy = CheckpointPolicy(
+        checkpoint,
+        device=args.device,
+        simulations=args.simulations,
+        temperature=args.temperature,
+        temperature_moves=args.temperature_moves,
+        late_temperature=args.late_temperature,
+        sample_moves=args.sample_moves,
+        add_root_noise=args.root_noise,
+        root_dirichlet_alpha=args.root_dirichlet_alpha,
+        root_exploration_fraction=args.root_exploration_fraction,
+        seed=args.seed,
+    )
     total_records = 0
     for game_index in range(args.games):
         board = policy.new_board(

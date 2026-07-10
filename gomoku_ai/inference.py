@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,14 @@ class CheckpointPolicy:
         device: str | torch.device = "auto",
         simulations: int = 64,
         c_puct: float = 1.5,
+        temperature: float = 0.0,
+        temperature_moves: int = 0,
+        late_temperature: float | None = None,
+        sample_moves: bool = False,
+        add_root_noise: bool = False,
+        root_dirichlet_alpha: float = 0.3,
+        root_exploration_fraction: float = 0.25,
+        seed: int | None = None,
         use_tactics: bool = True,
     ) -> None:
         self.checkpoint_path = Path(checkpoint_path)
@@ -54,7 +63,18 @@ class CheckpointPolicy:
         self.device = resolve_device(device)
         self.network = load_checkpoint(self.checkpoint_path, device=self.device)
         self.model = TorchPolicyValueModel(self.network, device=self.device)
-        self.mcts_config = MCTSConfig(simulations=simulations, c_puct=c_puct, temperature=0.0)
+        self.mcts_config = MCTSConfig(
+            simulations=simulations,
+            c_puct=c_puct,
+            temperature=temperature,
+            root_dirichlet_alpha=root_dirichlet_alpha,
+            root_exploration_fraction=root_exploration_fraction,
+            add_root_noise=add_root_noise,
+        )
+        self.temperature_moves = temperature_moves
+        self.late_temperature = temperature if late_temperature is None else late_temperature
+        self.sample_moves = sample_moves
+        self.rng = np.random.default_rng(seed)
         self.use_tactics = use_tactics
 
     @property
@@ -86,11 +106,16 @@ class CheckpointPolicy:
         )
 
     def predict(self, board: GomokuBoard) -> MovePrediction:
+        mcts_config = self.mcts_config
+        if self.temperature_moves > 0 and board.move_count >= self.temperature_moves:
+            mcts_config = replace(mcts_config, temperature=self.late_temperature)
         return predict_move(
             board,
             self.model,
-            self.mcts_config,
+            mcts_config,
             use_tactics=self.use_tactics,
+            sample_move=self.sample_moves,
+            rng=self.rng,
         )
 
 
@@ -100,6 +125,8 @@ def predict_move(
     config: MCTSConfig | None = None,
     *,
     use_tactics: bool = True,
+    sample_move: bool = False,
+    rng: np.random.Generator | None = None,
 ) -> MovePrediction:
     if board.winner is not None:
         raise ValueError("cannot predict a move for a finished game")
@@ -125,7 +152,7 @@ def predict_move(
 
     eval_config = config or MCTSConfig(temperature=0.0)
     policy = run_mcts(clone_board(board), model, eval_config)
-    action_index = int(np.argmax(policy))
+    action_index = _select_action_index(policy, sample_move=sample_move, rng=rng)
     row, col = index_to_action(action_index, board.size)
     return MovePrediction(
         row=row,
@@ -135,3 +162,19 @@ def predict_move(
         value=value,
         used_tactical_move=False,
     )
+
+
+def _select_action_index(
+    policy: np.ndarray,
+    *,
+    sample_move: bool,
+    rng: np.random.Generator | None,
+) -> int:
+    if not sample_move:
+        return int(np.argmax(policy))
+    total = float(policy.sum())
+    if total <= 0.0:
+        raise ValueError("cannot sample a move from an empty policy")
+    probabilities = np.asarray(policy, dtype=np.float64) / total
+    generator = rng or np.random.default_rng()
+    return int(generator.choice(len(probabilities), p=probabilities))

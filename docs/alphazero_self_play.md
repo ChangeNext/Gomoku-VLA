@@ -1,5 +1,7 @@
 # AlphaZero-style Self-Play
 
+Project goal: the VLA should play Gomoku well, not merely place a stone at a commanded coordinate. AlphaZero/MCTS outputs are strategic supervision labels for move choice, while robot targets remain execution labels.
+
 ## Goal
 
 AlphaZero-style training is the learning-based path for making the Gomoku policy stronger without hand-written rule evaluation. The first stage is board-only:

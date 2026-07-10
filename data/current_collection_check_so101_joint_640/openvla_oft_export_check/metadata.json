@@ -1,0 +1,38 @@
+{
+  "default_model_inputs": {
+    "images": [
+      "board_top_before",
+      "wrist_cam_before"
+    ],
+    "language_instruction": "input.language_instruction",
+    "state": "input.state"
+  },
+  "exported_records": 1,
+  "filters": {
+    "include_unusable": false,
+    "require_so101": true,
+    "requires_execution_success": true
+  },
+  "format": "gomoku_openvla_oft_multiview_v1",
+  "input_image_keys": [
+    "board_top_before",
+    "wrist_cam_before"
+  ],
+  "input_jsonl": "data\\current_collection_check_so101_joint_640\\episodes.jsonl",
+  "manifest": "manifest.jsonl",
+  "qa_policy": {
+    "contact_sheet": "qa only, not a default model input",
+    "robot_full_before": "qa only, not a default model input"
+  },
+  "skip_reasons": {
+    "execution_failed": 4,
+    "missing_input_image:wrist_cam_before": 5
+  },
+  "skipped_records": 9,
+  "target": {
+    "autoregressive_text": "target.text",
+    "move_token": "target.move_token",
+    "so101_joint_action_sequence": "target.action.sequence"
+  },
+  "total_records": 10
+}

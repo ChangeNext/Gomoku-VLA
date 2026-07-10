@@ -238,6 +238,33 @@ class GomokuAITest(unittest.TestCase):
         self.assertEqual(prediction.action_index, action_to_index(prediction.row, prediction.col, 5))
         self.assertEqual(prediction.value, 0.0)
 
+    def test_predict_move_can_sample_from_policy_distribution(self) -> None:
+        class FakeRng:
+            def choice(self, size: int, p: np.ndarray) -> int:
+                self.size = size
+                self.probabilities = p
+                return 4
+
+        board = GomokuBoard(size=5, win_length=4)
+        policy = np.zeros(25, dtype=np.float32)
+        policy[0] = 0.8
+        policy[4] = 0.2
+        fake_rng = FakeRng()
+        with patch("gomoku_ai.inference.run_mcts", return_value=policy):
+            prediction = predict_move(
+                board,
+                UniformPolicyValueModel(),
+                MCTSConfig(simulations=1, temperature=1.0),
+                use_tactics=False,
+                sample_move=True,
+                rng=fake_rng,
+            )
+
+        self.assertEqual(prediction.action_index, 4)
+        self.assertEqual(prediction.move, (0, 4))
+        self.assertEqual(fake_rng.size, 25)
+        self.assertAlmostEqual(float(fake_rng.probabilities.sum()), 1.0)
+
     def test_predict_move_uses_tactical_override(self) -> None:
         board = GomokuBoard(size=5, win_length=4)
         for col in range(3):
@@ -272,6 +299,38 @@ class GomokuAITest(unittest.TestCase):
             self.assertEqual(board.rule_set, "renju")
             self.assertTrue(board.enforce_center_opening)
             self.assertIn(prediction.move, board.legal_moves())
+
+    def test_checkpoint_policy_switches_to_late_temperature_after_opening(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "model.pt"
+            network = GomokuPolicyValueNet(board_size=5, channels=8, res_blocks=1)
+            save_checkpoint(network, path)
+
+            policy = CheckpointPolicy(
+                path,
+                device="cpu",
+                simulations=2,
+                temperature=1.0,
+                temperature_moves=1,
+                late_temperature=0.1,
+                sample_moves=True,
+                use_tactics=False,
+            )
+            board = policy.new_board(enforce_center_opening=False)
+            board.place(0, 0)
+            captured: dict[str, float] = {}
+
+            def fake_run_mcts(board: GomokuBoard, model: UniformPolicyValueModel, config: MCTSConfig) -> np.ndarray:
+                captured["temperature"] = config.temperature
+                output = np.zeros(board.size * board.size, dtype=np.float32)
+                output[action_to_index(1, 1, board.size)] = 1.0
+                return output
+
+            with patch("gomoku_ai.inference.run_mcts", side_effect=fake_run_mcts):
+                prediction = policy.predict(board)
+
+            self.assertEqual(prediction.move, (1, 1))
+            self.assertEqual(captured["temperature"], 0.1)
 
     def test_tactical_move_skips_renju_forbidden_opponent_moves(self) -> None:
         board = GomokuBoard(rule_set="renju")
