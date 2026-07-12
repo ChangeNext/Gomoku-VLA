@@ -172,9 +172,19 @@ def _select_action_index(
 ) -> int:
     if not sample_move:
         return int(np.argmax(policy))
-    total = float(policy.sum())
+    probabilities = np.asarray(policy, dtype=np.float64)
+    if probabilities.ndim != 1 or not np.all(np.isfinite(probabilities)):
+        raise ValueError("cannot sample a move from a non-finite policy")
+    if np.any(probabilities < 0.0):
+        raise ValueError("cannot sample a move from a policy with negative probabilities")
+    total = float(probabilities.sum(dtype=np.float64))
     if total <= 0.0:
         raise ValueError("cannot sample a move from an empty policy")
-    probabilities = np.asarray(policy, dtype=np.float64) / total
+    probabilities /= total
+    # NumPy's Generator.choice checks the sum more strictly than float32 MCTS
+    # policies can guarantee. Correct the final floating-point residual without
+    # changing the relative policy distribution in any meaningful way.
+    residual = 1.0 - float(probabilities.sum(dtype=np.float64))
+    probabilities[int(np.argmax(probabilities))] += residual
     generator = rng or np.random.default_rng()
     return int(generator.choice(len(probabilities), p=probabilities))

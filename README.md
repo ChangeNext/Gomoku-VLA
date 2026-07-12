@@ -4,6 +4,12 @@ Project goal: build a Gomoku-aware VLA that reads the board, chooses a strong le
 
 MuJoCo 기반 오목 보드게임 로봇 시스템을 위한 초기 MVP입니다.
 
+## 문서
+
+프로젝트 구조, 게임 규칙, 학습, 시뮬레이션, 데이터, 안전, 비전 및
+평가 문서는 [`docs/index.md`](docs/index.md)에서 주제별로 찾을 수 있습니다.
+에이전트 작업 규칙과 저장소 지도는 [`AGENTS.md`](AGENTS.md)를 따릅니다.
+
 ## 현재 포함된 것
 
 - 15x15 오목/렌주 board state, 턴 관리, 승리/금수 판정

@@ -22,6 +22,17 @@ def main() -> None:
     parser.add_argument("--output-jsonl")
     parser.add_argument("--assets-dir")
     parser.add_argument("--games", type=int, default=1)
+    parser.add_argument(
+        "--game-id-prefix",
+        default=None,
+        help="Unique game ID prefix for parallel production collection shards.",
+    )
+    parser.add_argument(
+        "--episode-index-offset",
+        type=int,
+        default=0,
+        help="Offset stored in observation episode indexes for parallel shards.",
+    )
     parser.add_argument("--simulations", type=int, default=64)
     parser.add_argument("--device", default="auto")
     parser.add_argument(
@@ -66,6 +77,18 @@ def main() -> None:
     parser.add_argument("--cameras", default=",".join(DEFAULT_TRAINING_CAMERAS))
     parser.add_argument("--robot-model", choices=("kinematic", "panda", "so101"), default="so101")
     parser.add_argument(
+        "--cell-size",
+        type=float,
+        default=0.035,
+        help="Physical spacing between board intersections in metres.",
+    )
+    parser.add_argument(
+        "--stone-radius",
+        type=float,
+        default=0.012,
+        help="Physical stone radius in metres; must be less than half the cell size.",
+    )
+    parser.add_argument(
         "--capture-phase-images",
         action="store_true",
         help="Also save one image set for each scripted pick/place phase.",
@@ -79,6 +102,8 @@ def main() -> None:
 
     if args.games <= 0:
         parser.error("--games must be positive")
+    if args.episode_index_offset < 0:
+        parser.error("--episode-index-offset must be non-negative")
     if args.temperature < 0.0:
         parser.error("--temperature must be non-negative")
     if args.late_temperature < 0.0:
@@ -87,6 +112,10 @@ def main() -> None:
         parser.error("--temperature-moves must be non-negative")
     if args.root_dirichlet_alpha <= 0.0:
         parser.error("--root-dirichlet-alpha must be positive")
+    if args.cell_size <= 0.0:
+        parser.error("--cell-size must be positive")
+    if args.stone_radius <= 0.0 or args.stone_radius * 2.0 >= args.cell_size:
+        parser.error("--stone-radius must be positive and less than half --cell-size")
     if not 0.0 <= args.root_exploration_fraction <= 1.0:
         parser.error("--root-exploration-fraction must be between 0 and 1")
     if args.center_opening and args.no_center_opening:
@@ -129,6 +158,7 @@ def main() -> None:
         seed=args.seed,
     )
     total_records = 0
+    game_id_prefix = args.game_id_prefix or f"{checkpoint.stem}-mujoco"
     for game_index in range(args.games):
         rule_set = args.rule_set or policy.rule_set
         center_opening = policy.enforce_center_opening if enforce_center_opening is None else enforce_center_opening
@@ -137,6 +167,8 @@ def main() -> None:
             win_length=args.win_length,
             rule_set=rule_set,
             enforce_center_opening=center_opening,
+            cell_size=args.cell_size,
+            stone_radius=args.stone_radius,
             show_robot=True,
             robot_model=args.robot_model,
         )
@@ -145,8 +177,8 @@ def main() -> None:
             policy,
             output_jsonl,
             assets_dir,
-            game_id=f"{checkpoint.stem}-mujoco-{game_index + 1}",
-            episode_index=game_index,
+            game_id=f"{game_id_prefix}-{game_index + 1}",
+            episode_index=args.episode_index_offset + game_index,
             policy_source=args.policy_source,
             checkpoint=str(checkpoint),
             max_moves=args.max_moves,

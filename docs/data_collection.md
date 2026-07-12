@@ -48,6 +48,20 @@ python -m scripts.generate_mujoco_policy_episodes \
 
 `--robot-model` defaults to `so101`. Use `--robot-model kinematic` only for quick controller smoke tests.
 
+The default 3.5 cm cell spacing produces a 49 cm playable span, which is not
+fully reachable by the fixed-base SO-101 from one side. Production SO-101
+collection should use the robot-scale board geometry below unless the scene is
+changed to add a safe base repositioning mechanism:
+
+```text
+--cell-size 0.021 --stone-radius 0.007
+```
+
+This keeps the 15x15 rules and 225 move tokens unchanged while shrinking only
+the simulated physical board. A nine-point reachability diagnostic measured a
+maximum static placement error below the current 5.5 cm collection threshold;
+the full dataset validator remains the authoritative execution gate.
+
 For real dataset collection, do not run many games with the deterministic default policy. The default is kept deterministic for debugging, but `--games 100` without sampling can repeat the same opening and produce low-diversity data. Use:
 
 - `--sample-moves`: select the teacher move from the MCTS policy distribution
@@ -222,6 +236,40 @@ This is the preferred path for OpenVLA-OFT/custom multi-view training because th
 - `input.images.wrist_cam_before`: gripper-local SO-101 view
 - `input.language_instruction`: non-leaking prompt
 - `input.state`: pre-action board/player/robot state
+
+## Production Quality Validation
+
+After a production SO-101 collection, validate the complete raw dataset before
+exporting it:
+
+```bash
+python -m scripts.validate_so101_dataset \
+  --input-jsonl data/<collection>/raw/episodes.jsonl \
+  --expected-games 100 \
+  --image-width 768 \
+  --image-height 768 \
+  --output-json data/<collection>/quality/raw_quality.json \
+  --output-md data/<collection>/quality/raw_quality.md
+```
+
+The validator checks complete games, board transitions, legality, SO-101 action
+shape and finite values, safety/grasp/place/execution results, input/target
+separation, cursor hiding, image existence/integrity/resolution, duplicate
+steps, and diversity indicators. It exits unsuccessfully when a required
+condition fails so collection and export workflows can use it as a gate.
+
+Validate the exported model-facing view separately:
+
+```bash
+python -m scripts.validate_openvla_manifest \
+  --manifest data/<collection>/openvla_oft/manifest.jsonl \
+  --expected-samples <raw-record-count> \
+  --output-json data/<collection>/quality/export_quality.json
+```
+
+This second gate verifies exact model-input image keys, target/input separation,
+SO-101 token and continuous-action targets, quality flags, unique sample IDs,
+and all copied input/QA image paths.
 
 The labels stay under `target`:
 

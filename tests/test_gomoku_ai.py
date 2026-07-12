@@ -265,6 +265,23 @@ class GomokuAITest(unittest.TestCase):
         self.assertEqual(fake_rng.size, 25)
         self.assertAlmostEqual(float(fake_rng.probabilities.sum()), 1.0)
 
+    def test_predict_move_renormalizes_float32_mcts_policy_for_numpy_sampling(self) -> None:
+        board = GomokuBoard(size=15, win_length=5)
+        policy = np.linspace(0.0, 1.0, 225, dtype=np.float32)
+        policy /= np.float32(policy.sum())
+        policy *= np.float32(0.99999)
+        with patch("gomoku_ai.inference.run_mcts", return_value=policy):
+            prediction = predict_move(
+                board,
+                UniformPolicyValueModel(),
+                MCTSConfig(simulations=1, temperature=1.0),
+                use_tactics=False,
+                sample_move=True,
+                rng=np.random.default_rng(7),
+            )
+
+        self.assertIn(prediction.move, board.legal_moves())
+
     def test_predict_move_uses_tactical_override(self) -> None:
         board = GomokuBoard(size=5, win_length=4)
         for col in range(3):

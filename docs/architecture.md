@@ -1,34 +1,125 @@
 # Architecture
 
-Project goal: build a Gomoku-aware VLA that infers the next strong legal move from visual board state and then executes it. Target row/column, target world pose, and robot trajectory are supervision labels or downstream execution data, not model-input hints.
+Gomoku-VLA separates board perception, strategic move choice, and physical
+execution so each failure can be measured independently. The main objective is
+to choose and execute a strong legal move from observation. Target coordinates
+and trajectories are supervision or execution data, not strategic input hints.
 
-## Modules
+## Dependency Direction
 
-- `board/`: board matrix, 좌표 검증, 턴 관리, 자유룰/렌주 승리와 금수 판정
-- `simulation/`: MuJoCo model 생성, stepping, rendering, board/world 좌표 변환
-- `interface/`: 사람 입력과 GUI/web interface 예정
-- `gomoku_ai/`: AlphaZero-style policy/value model, MCTS, self-play data generation
-- `robot_control/`: IK, trajectory, gripper control 예정
-- `vision/`: board/stones 인식 예정
-- `vla/`: VLA inference와 fine-tuning 예정
-- `data/`: episode logging 예정
-- `evaluation/`: 승률, 착수 성공률, latency, placement error 예정
+```text
+camera/image
+    -> vision detector
+    -> GomokuBoard-compatible state
+    -> tactical guard + policy/value network + MCTS
+    -> selected legal (row, col)
+    -> safety validation
+    -> board/world conversion + IK/scripted trajectory
+    -> MuJoCo or future real robot
+```
 
-## Current MVP Flow
+The board package is the rule authority. Policy, UI, simulation, and robot code
+may consume it, but must not maintain competing legality implementations.
 
-1. 사람이 row/col 좌표를 입력한다.
-2. `board.GomokuBoard`가 합법 수와 승리 여부를 판정한다.
-3. `simulation.GomokuMujocoEnv`가 board state로 MuJoCo XML을 재생성한다.
-4. MuJoCo model/data를 stepping 또는 rendering한다.
+## Implemented Modules
 
-## Learning Policy Flow
+### `board/`
 
-1. `gomoku_ai.encoding`이 `GomokuBoard`를 현재 플레이어 관점 tensor로 변환한다.
-2. policy/value model이 착수 prior와 현재 판세 value를 예측한다.
-3. `gomoku_ai.mcts`가 legal move만 대상으로 PUCT 탐색을 수행한다. 렌주 학습에서는 흑 중앙 첫 수, 3-3/4-4/장목 금수가 이 legal move mask에 반영된다.
-4. self-play는 `(state, MCTS policy, final result)` sample을 저장한다.
-5. replay buffer에서 mini-batch를 뽑아 policy loss와 value loss를 AdamW로 함께 최적화한다.
-6. evaluator match가 기준을 넘으면 `best.pt`로 승격한다.
-7. 학습된 policy가 선택한 `(row, col)`은 이후 `simulation.GomokuMujocoEnv.step()` 또는 로봇 제어 모듈로 전달한다.
+Owns `Player`, `GomokuBoard`, free-rule and Renju legality, center-opening
+enforcement, turn transitions, wins, and draws. See [Game rules](game_rules.md).
 
-카메라 인식과 로봇팔 제어는 AlphaZero 전략 학습과 분리한다. 최종 통합에서는 `camera image -> Gomoku-aware VLA/policy -> selected move label -> robot execution label` 순서로 연결한다. VLA 입력에는 정답 좌표를 넣지 않는다.
+### `gomoku_ai/`
+
+Contains board/action encoding, a policy/value protocol, residual PyTorch
+network, PUCT MCTS, tactical move selection, self-play, replay storage,
+training, checkpoint promotion/evaluation, inference, policy episode records,
+and OpenVLA-OFT-style manifest export.
+
+The board-only AlphaZero loop is intentionally independent of MuJoCo so
+strategy training remains fast and deterministic.
+
+### `simulation/`
+
+`GomokuMujocoEnv` owns MuJoCo scene construction and updates, cameras,
+board/world conversion, kinematic/Panda/SO-101 models, joint control, stone
+supply and held/active-stone state. `scripted_robot` builds Cartesian
+pick/place traces. `policy_collection` executes and records SO-101-oriented
+multi-view demonstrations.
+
+### `robot_control/`
+
+Provides the current external safety gate for supply, legality, player,
+workspace, and scripted trajectory checks. It is deliberately separate from
+learned policy code. See [Robot safety](robot_safety.md).
+
+### `vision/`
+
+Provides a calibrated top-down grid sampler and brightness/contrast stone
+classifier. This is a controlled-image baseline, not a production perception
+system. See [Vision](vision.md).
+
+### `scripts/` and `web/`
+
+Expose terminal play, click UI, MuJoCo viewers, rendering, AlphaZero training,
+checkpoint evaluation, episode generation/export, and browser-based human
+evaluation. The browser frontend is static content served by the evaluation
+server.
+
+### `tests/`
+
+Uses `unittest` to cover rules, policy/search/training components, checkpoint
+and episode formats, MuJoCo state and robots, data export, safety, vision, and
+human evaluation state.
+
+## Core Data Flows
+
+### Board-only strategy training
+
+```text
+GomokuBoard
+  -> current-player feature planes
+  -> policy/value network
+  -> legal-move-masked MCTS
+  -> self-play (state, policy target, outcome)
+  -> replay buffer
+  -> policy/value optimization
+  -> candidate evaluation and checkpoint promotion
+```
+
+Self-play follows MCTS visit distributions. Hand-written tactical overrides are
+used in evaluation/play inference, not to replace self-play targets.
+
+### Simulation demonstration collection
+
+```text
+pre-action board + board/wrist images
+  -> checkpoint policy selects move
+  -> board legality + RobotSafetyController
+  -> selected cell maps to world target and SO-101 joint sequence
+  -> phase execution and multi-view capture
+  -> raw JSONL + image assets
+  -> filtered OpenVLA-style manifest
+```
+
+Model inputs default to pre-action `board_top` and `wrist_cam` observations plus
+a non-leaking instruction. Move tokens, target cells, world poses, policy/value
+signals, and action sequences stay under targets or metadata. `robot_full` is a
+QA/ablation view by default.
+
+## Architectural Invariants
+
+- Game legality has one authority: `GomokuBoard`.
+- Observations must represent information available before the action.
+- Strategic and execution labels must not leak into model inputs.
+- Selected moves are validated again at the board/execution boundary.
+- Safety remains outside VLA inference and fails closed.
+- Strategy strength, perception accuracy, and manipulation success are
+  evaluated separately before end-to-end reporting.
+
+## Planned Boundary
+
+There is no production `vla/` package yet. Current code prepares and exports a
+custom multi-view autoregressive training contract; integrating an actual
+OpenVLA/OFT trainer and runtime remains future work. Real-robot drivers,
+full collision checking, emergency-stop integration, robust perception, and
+closed-loop grasp/placement correction also remain outside the current MVP.

@@ -110,6 +110,15 @@ class GomokuMujocoEnvTest(unittest.TestCase):
         site_z = np.array(env.data.site_xmat[site_id], dtype=float).reshape(3, 3)[:, 2]
         self.assertGreater(float(site_z[2]), 0.96)
 
+    def test_robot_scale_board_keeps_all_corners_within_so101_place_tolerance(self) -> None:
+        env = GomokuMujocoEnv(cell_size=0.021, stone_radius=0.007, robot_model="so101")
+        for row, col in ((0, 0), (0, 14), (14, 0), (14, 14)):
+            target = np.array(env.board_to_world(row, col), dtype=float)
+            ik_target = (float(target[0]), float(target[1]), float(target[2] + 0.014))
+            env.set_so101_joint_targets(env.solve_so101_ik(ik_target), gripper=0.0)
+            carried = np.array(env.so101_gripper_world(), dtype=float) + np.array([0.0, 0.0, -0.014])
+            self.assertLess(float(np.linalg.norm(carried - target)), 0.055)
+
     def test_articulated_robot_cursor_color_is_neutral(self) -> None:
         env = GomokuMujocoEnv(robot_model="so101")
         cursor_id = env.model.geom("cursor").id

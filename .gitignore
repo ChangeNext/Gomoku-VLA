@@ -7,6 +7,7 @@ gomoku_ai/checkpoints/
 gomoku_ai/logs/
 gomoku_ai/plots/
 gomoku_ai/runs/
+data/so101_production_*/
 
 gomoku_snapshot.ppm
 gomoku_snapshot.png

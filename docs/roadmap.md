@@ -1,51 +1,76 @@
-# Roadmap
+# Roadmap and Current Status
 
-Project goal: prioritize a Gomoku-aware VLA that sees the board, chooses a strong legal move, and executes it. Coordinate-following manipulation remains a supporting subtask, not the main objective.
+The project aims to observe a Gomoku board, choose a strong legal move, and
+safely execute it. Coordinate-following placement is an auxiliary execution
+skill, not the strategic objective.
 
-## 1. MuJoCo Simulation MVP
+## Implemented Foundation
 
-- 15x15 오목판 MuJoCo scene 생성
-- 착수 시 board state와 MuJoCo geoms 동기화
-- headless render와 XML export 지원
+- Free-rule and Renju board state with legal moves, wins, draws, center opening,
+  and Black overline/double-three/double-four restrictions
+- Dynamic MuJoCo Gomoku scene with board/world coordinate conversion, multiple
+  cameras, stone state, and headless rendering
+- CLI, Matplotlib click UI, keyboard MuJoCo viewer, and AI viewer
+- Kinematic baseline plus vendored articulated SO-101 and Panda integrations
+- AlphaZero-style residual policy/value network, batched MCTS, self-play,
+  replay buffer, augmentation, training outputs, and checkpoint evaluation
+- Shared checkpoint inference with tactical immediate-win/threat handling
+- Policy episode recording and MuJoCo SO-101 multi-view collection
+- OpenVLA-OFT-style custom manifest export with input/target separation
+- Workspace, inventory, legality, and scripted trajectory safety checks
+- Calibrated-grid brightness/contrast vision baseline
+- Local browser human-checkpoint evaluation and persistent results
 
-## 2. Human-playable Gomoku Environment
+Implemented means that code and regression coverage exist. It does not imply
+strong 15x15 play, production robot safety, or sim-to-real readiness.
 
-- CLI 착수 MVP
-- 이후 GUI 또는 web interface에서 좌표 선택 지원
+## Near-term Priorities
 
-## 3. Rule/Search-based Baseline
+### 1. Establish a strong strategy teacher
 
-- 합법 수 필터링
-- 간단 heuristic policy
-- Minimax baseline
+- run and compare reproducible 15x15 Renju training runs;
+- expand evaluator games and fixed tactical position suites;
+- quantify illegal rate, color-split win rate, and checkpoint variance;
+- improve Renju edge-case coverage before treating it as competition-complete.
 
-## 4. Learning-based Move Policy
+### 2. Validate perception as a policy input
 
-- AlphaZero-style board-only self-play scaffold
-- policy/value model interface
-- MCTS visit distribution을 policy target으로 저장
-- replay buffer와 PyTorch policy/value trainer
-- checkpoint evaluator와 best-model promotion 추가 예정
+- add automatic/robust board calibration and confidence estimates;
+- test perspective, lighting, occlusion, and camera noise;
+- validate observed transitions against the previous board state;
+- measure board-cell classification and full-board reconstruction accuracy.
 
-## 5. VLA-based Manipulation
+### 3. Harden SO-101 data generation
 
-- board 좌표를 로봇 action target으로 변환
-- IK, trajectory, gripper control 추가
+- quantify grasp, carry, placement, and final-cell success;
+- add joint, velocity, collision, and timeout checks;
+- replace or compare constraint attachment with contact-stable grasping;
+- add retries or closed-loop corrections without hiding failed attempts.
 
-## 6. Gomoku-aware VLA
+### 4. Train the Gomoku-aware VLA
 
-- board state 인식과 전략 판단 통합
-- safety controller는 VLA 외부에 유지
+- integrate the exported multi-view manifest with an actual OpenVLA/OFT trainer;
+- first validate move-token prediction from board observations;
+- then validate action prediction conditioned on the model's move token;
+- finally train and evaluate the combined `<MOVE_k> <ACT_...> <EOS>` output;
+- keep coordinate-leaking prompts out of strategic training splits.
 
-## 7. Sim2Real
+### 5. End-to-end and sim-to-real evaluation
 
-- 카메라 캘리브레이션
-- 실제 board/stones 인식
-- placement error 평가
+- report perception, strategy, safety, and manipulation metrics separately;
+- add real camera, board-frame, and robot-base calibration;
+- integrate real emergency stop, watchdog, collision, and joint-limit controls;
+- measure real placement error and recovery behavior;
+- compare simulation and real-world distributions and failures.
 
-## Corrected VLA Direction
+## Completion Gates
 
-- Main objective: Gomoku-aware VLA that sees the board and selects a strong legal move.
-- Do not train the main VLA with coordinate-leaking prompts such as `place at row X column Y`.
-- Treat `selected_move`, `target_cell`, `target_world_xyz`, and robot trajectories as supervision labels or execution metadata.
-- Coordinate-following manipulation is an auxiliary skill only.
+The project should not be described as an end-to-end Gomoku-aware VLA until it
+can demonstrate all of the following on held-out games:
+
+- board state inferred from images without answer-coordinate leakage;
+- selected move is legal and strategically competitive;
+- safety gate authorizes or rejects execution with an auditable reason;
+- robot completes the selected move within defined placement tolerance;
+- failures are attributed to perception, strategy, safety, or execution;
+- real-robot claims are backed by real-robot tests, not MuJoCo results alone.

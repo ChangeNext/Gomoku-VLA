@@ -1,33 +1,69 @@
-# Repository Guidelines
+# Repository Agent Guide
 
-Project goal: build a Gomoku-aware VLA that reads the board, chooses a strong legal move, and then executes that move. Do not treat coordinate-following placement as the main objective. Target row/column, target world pose, and robot trajectories are labels or metadata, not model-input instructions.
+## Mission
 
-## Project Structure & Module Organization
+Build a Gomoku-aware VLA that observes the board, selects a strong legal move,
+and safely executes it. Target cells, world poses, and robot trajectories are
+labels or downstream execution metadata; do not expose them as model-input
+instructions for the strategic policy.
 
-This is a Python 3.10+ project for a MuJoCo-backed Gomoku simulation and future VLA robot work. Core game logic lives in `board/`, especially `board/gomoku.py`. MuJoCo environment code lives in `simulation/`, with `simulation/mujoco_gomoku_env.py` building and updating the scene. User-facing entry points are in `scripts/`: `play_cli.py`, `interactive_play.py`, `viewer_play.py`, and `render_snapshot.py`. Tests are in `tests/` and mirror the package areas they validate. Design notes and roadmap material belong in `docs/`. Top-level generated or reference assets include `gomoku_scene.xml`, `gomoku_snapshot.png`, and `gomoku_snapshot.ppm`.
+## Repository Map
 
-## Build, Test, and Development Commands
+- `board/`: authoritative Gomoku and Renju rules
+- `gomoku_ai/`: board encoding, tactics, MCTS, self-play, training, and inference
+- `simulation/`: MuJoCo scene, robot models, trajectories, and episode collection
+- `robot_control/`: execution-time safety validation
+- `vision/`: calibrated board-state perception baseline
+- `scripts/`: CLI, viewer, training, evaluation, and data tools
+- `tests/`: `unittest` regression and integration tests
+- `docs/index.md`: documentation map and source-of-truth guide
 
-- `python -m unittest discover -s tests`: run the full test suite.
-- `python -m scripts.play_cli`: play Gomoku from the terminal.
-- `python -m scripts.interactive_play`: run the clickable human-playable UI.
-- `python -m scripts.viewer_play --single-view`: open the MuJoCo viewer with one camera.
-- `python -m scripts.render_snapshot`: render a PNG snapshot of the scene.
+Read the relevant page linked from `docs/index.md` before changing a subsystem.
+Third-party robot assets under `third_party/` are vendored dependencies, not
+project-owned implementation.
 
-Install the package dependencies from `pyproject.toml` in a virtual environment before running MuJoCo scripts.
+## Required Work Loop
 
-## Coding Style & Naming Conventions
+1. Inspect the relevant code, tests, and linked documentation.
+2. Reproduce the behavior or establish a baseline.
+3. Define observable acceptance criteria.
+4. Make the smallest coherent change.
+5. Add or update focused tests and documentation.
+6. Run focused tests, then the full suite when practical.
+7. Review the diff and report unverified assumptions explicitly.
 
-Use straightforward Python with type hints, as in the existing modules. Follow 4-space indentation, `snake_case` for functions, variables, and modules, and `PascalCase` for classes and enums. Keep board-state rules in `board/`; keep MuJoCo rendering, camera, robot, and coordinate conversion behavior in `simulation/`. Prefer small methods with explicit validation and clear `ValueError` messages for invalid moves or coordinates.
+Run the full suite from the repository root:
 
-## Testing Guidelines
+```bash
+python -m unittest discover -s tests
+```
 
-Tests use the standard library `unittest` framework. Name files `test_*.py`, test classes `*Test`, and methods `test_*`. Add focused tests for new board rules, coordinate conversions, robot target behavior, and scene updates. Run `python -m unittest discover -s tests` before submitting changes.
+For MuJoCo visual changes, also run the relevant viewer or
+`python -m scripts.render_snapshot` and inspect the result.
 
-## Commit & Pull Request Guidelines
+## Non-negotiable Invariants
 
-The current history uses short imperative commit subjects, for example `Improve Gomoku robot scene UI`. Keep subjects concise and describe the user-visible or architectural change. Pull requests should include a summary, test results, and any relevant screenshots or rendered snapshots for UI, viewer, or scene changes. Link related docs updates when changing roadmap, architecture, safety, data collection, or VLA behavior.
+- `board/` must not depend on MuJoCo, UI, learning, or robot modules.
+- Simulation and policies consume board rules; they must not redefine legality.
+- Strategy selection and physical execution remain separately evaluable.
+- Policy output must be checked for legality before board or robot execution.
+- Keep safety checks outside learned policies. Never bypass illegal-move,
+  inventory, workspace, grasp/place, collision, or emergency-stop checks.
+- Do not weaken or delete a test merely to make a change pass.
+- Preserve deterministic seeds for stochastic tests and evaluation tools.
 
-## Agent-Specific Instructions
+## Documentation and Plans
 
-When adding features, update the relevant `docs/` page alongside code. Preserve the separation between simulation MVP, rule/search baselines, learning policies, VLA inference, and safety controls. Never remove explicit safety checks such as invalid move rejection, workspace limits, collision checks, or emergency-stop planning when robot actions are introduced.
+Update the relevant `docs/` page with every feature or behavior change. Keep
+this file short; detailed design and procedures belong under `docs/`.
+
+For work spanning multiple subsystems, create
+`docs/plans/active/<short-name>.md` with goals, non-goals, acceptance criteria,
+risks, steps, and validation commands. Move it to `docs/plans/completed/` after
+verification. Small local changes do not need a checked-in plan.
+
+## Style
+
+Use Python 3.10+, four-space indentation, type hints, `snake_case` names, and
+`PascalCase` classes. Prefer small methods with explicit validation and clear
+`ValueError` messages. Tests use `unittest`, `test_*.py`, `*Test`, and `test_*`.
