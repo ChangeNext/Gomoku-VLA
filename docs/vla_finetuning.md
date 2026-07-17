@@ -107,3 +107,74 @@ The included lightweight loader is `gomoku_ai.openvla_oft_dataset.OpenVLAOFTMani
 - `input.images` to the model's multi-image preprocessing path,
 - `target.text` to the autoregressive tokenizer,
 - `target.action.sequence` to the SO-101 action tokenizer or continuous action head.
+
+## GPU Training Preparation
+
+This repository can prepare the files needed for a later GPU-side OpenVLA/OFT
+run without importing OpenVLA or starting training:
+
+```bash
+python -m scripts.prepare_openvla_finetuning \
+  --manifest data/<collection>/openvla_oft/manifest.jsonl \
+  --output-dir data/<collection>/openvla_oft_prep \
+  --base-model openvla/openvla-7b \
+  --stage move_only
+```
+
+The preparation command writes:
+
+- `special_tokens.json`: `<MOVE_000>` through `<MOVE_224>`, discovered
+  `<ACT_SO101_...>` tokens, and tokenizer notes.
+- `run_config.json`: trainer-neutral requirements for inputs, targets,
+  tokenizer resizing, losses, and inference safety.
+- `training_prompt.md`: a GPU-machine implementation prompt for connecting the
+  manifest to an OpenVLA/OFT trainer.
+- `dataset_preview.jsonl`: a small non-leaking input/target preview.
+
+### Token and Embedding Requirements
+
+Move tokens are semantically new, so they should not reuse OpenVLA action-bin
+tokens. Add them as special tokens, resize the embedding matrix and language
+model head, and keep the newly added embedding and `lm_head` rows trainable even
+when the rest of the model is frozen or LoRA-tuned.
+
+### Loss Recommendation
+
+The first OpenVLA run should use discrete action tokens and autoregressive
+cross-entropy for both move and action generation:
+
+```text
+loss = move_token_ce + lambda_action * action_token_ce
+```
+
+Avoid mixing move-token CE with continuous joint MSE in the first integration,
+because the scales are different and make lambda tuning harder. Continuous
+action heads can be added later after the token path works.
+
+### Inference Safety
+
+Training samples only contain legal moves, but inference must still mask illegal
+move logits before selecting `<MOVE_k>`. Parse the board state, use
+`board.gomoku.GomokuBoard` as the legality authority, mask occupied and
+rule-illegal cells, then pass the selected move through
+`robot_control.RobotSafetyController` before execution.
+
+### Practical Staging
+
+Use staged training to isolate failures:
+
+```text
+1. move_only:
+   board_top_before + instruction -> <MOVE_k>
+
+2. teacher_move_then_action:
+   board_top_before + wrist_cam_before + teacher <MOVE_k> -> <ACT_SO101_...>
+
+3. move_then_action_tokens:
+   board_top_before + wrist_cam_before + instruction -> <MOVE_k> <ACT_SO101_...> <EOS>
+```
+
+For data efficiency, pretrain the move-token path with many simulated
+`(board_state, board_top_before, selected_move)` samples before spending real
+robot time. Use real robot data primarily to adapt wrist/action generation and
+sim-to-real execution details.

@@ -81,6 +81,10 @@ gomoku_ai/runs/<run-name>/plots/training.png
 gomoku_ai/runs/<run-name>/replay/replay_buffer.pkl
 ```
 
+Checkpoints store board size, win length, rule set, center-opening behavior,
+network architecture, and input-channel metadata. Downstream episode collection
+uses these values by default unless the CLI explicitly overrides them.
+
 Resume a run with `--resume-run gomoku_ai/runs/<run-name>`. This restores `latest.pt` and the replay buffer so long training keeps accumulated self-play samples.
 
 Play against a trained checkpoint:

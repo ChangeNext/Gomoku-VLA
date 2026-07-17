@@ -113,11 +113,12 @@ class GomokuAITest(unittest.TestCase):
     def test_checkpoint_round_trip_preserves_architecture_metadata(self) -> None:
         with TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "model.pt"
-            network = GomokuPolicyValueNet(board_size=5, channels=8, res_blocks=2)
+            network = GomokuPolicyValueNet(board_size=5, channels=8, res_blocks=2, win_length=4)
             save_checkpoint(network, path, metadata={"training_config": {"device": "cpu"}})
             loaded = load_checkpoint(path)
 
             self.assertEqual(loaded.board_size, 5)
+            self.assertEqual(loaded.win_length, 4)
             self.assertEqual(loaded.channels, 8)
             self.assertEqual(loaded.res_blocks, 2)
             self.assertEqual(loaded.architecture, "resnet")
@@ -299,10 +300,11 @@ class GomokuAITest(unittest.TestCase):
             path = Path(tmpdir) / "model.pt"
             network = GomokuPolicyValueNet(
                 board_size=5,
+                win_length=4,
                 channels=8,
                 res_blocks=1,
-                rule_set="renju",
-                enforce_center_opening=True,
+                rule_set="free",
+                enforce_center_opening=False,
             )
             save_checkpoint(network, path)
 
@@ -311,10 +313,12 @@ class GomokuAITest(unittest.TestCase):
             prediction = policy.predict(board)
 
             self.assertEqual(policy.board_size, 5)
-            self.assertEqual(policy.rule_set, "renju")
-            self.assertTrue(policy.enforce_center_opening)
-            self.assertEqual(board.rule_set, "renju")
-            self.assertTrue(board.enforce_center_opening)
+            self.assertEqual(policy.win_length, 4)
+            self.assertEqual(policy.rule_set, "free")
+            self.assertFalse(policy.enforce_center_opening)
+            self.assertEqual(board.win_length, 4)
+            self.assertEqual(board.rule_set, "free")
+            self.assertFalse(board.enforce_center_opening)
             self.assertIn(prediction.move, board.legal_moves())
 
     def test_checkpoint_policy_switches_to_late_temperature_after_opening(self) -> None:

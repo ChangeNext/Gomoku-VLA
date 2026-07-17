@@ -66,7 +66,7 @@ def main() -> None:
     parser.add_argument("--root-dirichlet-alpha", type=float, default=0.3)
     parser.add_argument("--root-exploration-fraction", type=float, default=0.25)
     parser.add_argument("--seed", type=int, help="Seed for sampled teacher move selection.")
-    parser.add_argument("--win-length", type=int, default=5)
+    parser.add_argument("--win-length", type=int, help="Override checkpoint win length.")
     parser.add_argument("--rule-set", choices=("free", "renju"))
     parser.add_argument("--center-opening", action="store_true")
     parser.add_argument("--no-center-opening", action="store_true")
@@ -140,7 +140,7 @@ def main() -> None:
         and (args.image_width < MIN_TRAINING_IMAGE_SIZE or args.image_height < MIN_TRAINING_IMAGE_SIZE)
     ):
         parser.error(
-            "--image-width and --image-height must be at least 224 for VLA collection; "
+            f"--image-width and --image-height must be at least {MIN_TRAINING_IMAGE_SIZE} for VLA collection; "
             "use --allow-low-res-smoke only for pipeline checks"
         )
 
@@ -164,7 +164,7 @@ def main() -> None:
         center_opening = policy.enforce_center_opening if enforce_center_opening is None else enforce_center_opening
         env = GomokuMujocoEnv(
             board_size=policy.board_size,
-            win_length=args.win_length,
+            win_length=policy.win_length if args.win_length is None else args.win_length,
             rule_set=rule_set,
             enforce_center_opening=center_opening,
             cell_size=args.cell_size,

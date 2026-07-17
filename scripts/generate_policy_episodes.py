@@ -26,7 +26,7 @@ def main() -> None:
     parser.add_argument("--root-dirichlet-alpha", type=float, default=0.3)
     parser.add_argument("--root-exploration-fraction", type=float, default=0.25)
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--win-length", type=int, default=5)
+    parser.add_argument("--win-length", type=int, help="Override checkpoint win length.")
     parser.add_argument("--rule-set", choices=("free", "renju"))
     parser.add_argument("--center-opening", action="store_true")
     parser.add_argument("--no-center-opening", action="store_true")

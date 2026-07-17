@@ -4,6 +4,7 @@ import csv
 import json
 import os
 import random
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -112,6 +113,7 @@ def run_training(config: AlphaZeroTrainingConfig) -> list[dict[str, float]]:
             res_blocks=config.res_blocks,
             input_channels=config.input_channels,
             architecture=config.architecture,
+            win_length=config.win_length,
             rule_set=config.rule_set,
             enforce_center_opening=config.enforce_center_opening,
         ).to(device)
@@ -453,7 +455,7 @@ def plot_training_history(history: list[dict[str, float]], path: Path) -> None:
     if not history:
         return
 
-    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-gomoku-vla")
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "matplotlib-gomoku-vla"))
 
     import matplotlib
 
@@ -499,7 +501,7 @@ def plot_policy_heatmap(
     rule_set: str = "free",
     enforce_center_opening: bool = False,
 ) -> None:
-    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-gomoku-vla")
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "matplotlib-gomoku-vla"))
 
     import matplotlib
 
@@ -582,7 +584,7 @@ def train_epoch_metrics(
     policy_target_entropies: list[float] = []
     network.train()
     amp_enabled = use_amp and device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
+    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
     total_steps = epochs * batches_per_epoch
     training_bar = trange(
         total_steps,
@@ -598,7 +600,7 @@ def train_epoch_metrics(
         policy_targets = torch.from_numpy(batch.policy_targets).to(device)
         value_targets = torch.from_numpy(batch.value_targets).to(device)
         optimizer.zero_grad()
-        with torch.cuda.amp.autocast(enabled=amp_enabled):
+        with torch.amp.autocast(device_type=device.type, enabled=amp_enabled):
             policy_logits, values = network(states)
             policy_loss, value_loss = policy_value_loss_components(policy_logits, values, policy_targets, value_targets)
             loss = policy_loss + value_loss

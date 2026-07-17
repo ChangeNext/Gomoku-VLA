@@ -82,6 +82,10 @@ class CheckpointPolicy:
         return self.network.board_size
 
     @property
+    def win_length(self) -> int:
+        return self.network.win_length
+
+    @property
     def rule_set(self) -> str:
         return self.network.rule_set
 
@@ -92,13 +96,13 @@ class CheckpointPolicy:
     def new_board(
         self,
         *,
-        win_length: int = 5,
+        win_length: int | None = None,
         rule_set: str | None = None,
         enforce_center_opening: bool | None = None,
     ) -> GomokuBoard:
         return GomokuBoard(
             size=self.board_size,
-            win_length=win_length,
+            win_length=self.win_length if win_length is None else win_length,
             rule_set=rule_set or self.rule_set,
             enforce_center_opening=(
                 self.enforce_center_opening if enforce_center_opening is None else enforce_center_opening

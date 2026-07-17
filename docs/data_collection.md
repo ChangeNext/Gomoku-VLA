@@ -47,6 +47,8 @@ python -m scripts.generate_mujoco_policy_episodes \
 ```
 
 `--robot-model` defaults to `so101`. Use `--robot-model kinematic` only for quick controller smoke tests.
+Unless `--win-length` is provided, collection uses the checkpoint's stored
+`win_length` so 5x5/9x9 smoke checkpoints do not silently switch rules.
 
 The default 3.5 cm cell spacing produces a 49 cm playable span, which is not
 fully reachable by the fixed-base SO-101 from one side. Production SO-101

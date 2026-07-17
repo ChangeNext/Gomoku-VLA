@@ -36,6 +36,7 @@ class GomokuPolicyValueNet(nn.Module):
         res_blocks: int = 16,
         input_channels: int = 6,
         architecture: str = "resnet",
+        win_length: int = 5,
         rule_set: str = "free",
         enforce_center_opening: bool = False,
     ) -> None:
@@ -48,6 +49,7 @@ class GomokuPolicyValueNet(nn.Module):
         self.res_blocks = res_blocks
         self.input_channels = input_channels
         self.architecture = architecture
+        self.win_length = win_length
         self.rule_set = rule_set
         self.enforce_center_opening = enforce_center_opening
         if architecture == "legacy_cnn":
@@ -139,6 +141,7 @@ def save_checkpoint(network: GomokuPolicyValueNet, path: str | Path, metadata: d
         "channels": network.channels,
         "res_blocks": network.res_blocks,
         "input_channels": network.input_channels,
+        "win_length": network.win_length,
         "rule_set": network.rule_set,
         "enforce_center_opening": network.enforce_center_opening,
         "state_dict": network.state_dict(),
@@ -160,6 +163,7 @@ def load_checkpoint(path: str | Path, device: str | torch.device = "cpu") -> Gom
         res_blocks=int(checkpoint.get("res_blocks", 0)),
         input_channels=input_channels,
         architecture=str(checkpoint.get("architecture", "legacy_cnn")),
+        win_length=int(checkpoint.get("win_length", checkpoint.get("training_config", {}).get("win_length", 5))),
         rule_set=str(checkpoint.get("rule_set", checkpoint.get("training_config", {}).get("rule_set", "free"))),
         enforce_center_opening=bool(
             checkpoint.get(
