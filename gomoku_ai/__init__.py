@@ -1,5 +1,6 @@
 from .encoding import action_to_index, encode_board, index_to_action, legal_action_mask
 from .episode_recorder import EpisodeStepRecord, append_episode_record, default_episode_output_path, play_and_record_episode
+from .external_engine import ExternalEngineConfig, PiskvorkEnginePolicy, build_piskvork_policy
 from .inference import CheckpointPolicy, MovePrediction, predict_move, resolve_device
 from .mcts import MCTSConfig, run_mcts, run_mcts_batch
 from .model import PolicyValueModel, UniformPolicyValueModel
@@ -12,9 +13,11 @@ __all__ = [
     "MCTSConfig",
     "CheckpointPolicy",
     "EpisodeStepRecord",
+    "ExternalEngineConfig",
     "MovePrediction",
     "OpenVLAOFTManifestDataset",
     "PolicyValueModel",
+    "PiskvorkEnginePolicy",
     "ReplayBuffer",
     "SelfPlayConfig",
     "SelfPlaySample",
@@ -22,6 +25,7 @@ __all__ = [
     "UniformPolicyValueModel",
     "action_to_index",
     "append_episode_record",
+    "build_piskvork_policy",
     "default_episode_output_path",
     "encode_board",
     "export_openvla_oft_multiview_dataset",

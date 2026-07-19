@@ -29,6 +29,32 @@ gomoku_ai/runs/<run-name>/data/best_policy_episodes.jsonl
 
 Use `--output-jsonl` to write somewhere else. Use `--max-moves` for short smoke tests.
 
+## Generate External-Engine Policy Episodes
+
+Rapfi, Embryo, Yixin-style engines can be used as strategic teachers through
+the Gomocup/Piskvork stdin/stdout protocol. Keep the engine binary outside this
+repository and pass it as a command; the collector records the selected move as
+a one-hot policy because these engines do not provide an MCTS visit distribution
+through the basic protocol.
+
+```bash
+python -m scripts.generate_policy_episodes \
+  --engine-command /path/to/rapfi \
+  --board-size 15 \
+  --rule-set renju \
+  --center-opening \
+  --games 10 \
+  --max-moves 80 \
+  --engine-timeout-turn-ms 1000 \
+  --output-jsonl data/rapfi_policy_episodes.jsonl
+```
+
+The adapter sends board positions with Piskvork `BOARD` commands, converts
+engine `x,y` replies to repository `row,col` coordinates, and still validates
+the selected move with `GomokuBoard.is_legal_move()` before recording or
+executing it. This keeps `board/` as the legality authority even when the
+teacher is an external threat-search/alpha-beta engine.
+
 ## Generate MuJoCo Policy Episodes
 
 Use MuJoCo collection when the selected move should be paired with rendered observations and SO-101 pick/place actions:
@@ -106,6 +132,39 @@ By default this writes:
 gomoku_ai/runs/<run-name>/data/best_mujoco_policy_episodes.jsonl
 gomoku_ai/runs/<run-name>/data/assets/<game-id>/*.png
 ```
+
+The same external-engine teacher can drive MuJoCo collection without an
+AlphaZero checkpoint:
+
+```bash
+python -m scripts.generate_mujoco_policy_episodes \
+  --engine-command /path/to/rapfi \
+  --board-size 15 \
+  --rule-set renju \
+  --center-opening \
+  --games 2 \
+  --max-moves 5 \
+  --random-prefix-moves 12 \
+  --random-prefix-seed 20260719 \
+  --skip-failed-games \
+  --robot-model so101 \
+  --cell-size 0.021 \
+  --stone-radius 0.007 \
+  --image-width 768 \
+  --image-height 768 \
+  --output-jsonl data/rapfi_mujoco/episodes.jsonl \
+  --assets-dir data/rapfi_mujoco/assets
+```
+
+`--random-prefix-moves` intentionally records from a non-empty mid-game board.
+In those records, `observation.is_first=false` unless the board is truly empty,
+while `observation.is_first_recorded_frame=true` marks the first saved frame for
+that episode. The recorded metadata also includes `prefix_moves`,
+`board_ply_before`, and `board_ply_after`. Keep `--skip-failed-games` enabled
+for long external-engine runs so a rare engine timeout or repo-legality rejection
+skips that game instead of stopping the whole shard. The MuJoCo collector
+restarts external Piskvork engines once per game so protocol state, illegal
+replies, or process failures cannot bleed into later games.
 
 The SO-101 controller records an IK-generated joint trajectory for:
 

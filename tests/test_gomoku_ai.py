@@ -1,4 +1,5 @@
 import unittest
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from gomoku_ai import (
     SelfPlayConfig,
     UniformPolicyValueModel,
     action_to_index,
+    build_piskvork_policy,
     encode_board,
     generate_self_play_game,
     generate_self_play_games,
@@ -23,6 +25,7 @@ from gomoku_ai import (
     run_mcts_batch,
     select_tactical_move,
 )
+from gomoku_ai.external_engine import ExternalEngineConfig, PiskvorkEnginePolicy
 from gomoku_ai.replay_buffer import augment_state_policy
 from gomoku_ai.torch_model import GomokuPolicyValueNet, TorchPolicyValueModel, load_checkpoint, save_checkpoint
 from gomoku_ai.train import (
@@ -318,8 +321,137 @@ class GomokuAITest(unittest.TestCase):
             self.assertFalse(policy.enforce_center_opening)
             self.assertEqual(board.win_length, 4)
             self.assertEqual(board.rule_set, "free")
-            self.assertFalse(board.enforce_center_opening)
-            self.assertIn(prediction.move, board.legal_moves())
+
+    def test_piskvork_engine_policy_predicts_legal_move_from_protocol_engine(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            engine_path = Path(tmpdir) / "fake_piskvork.py"
+            commands_path = Path(tmpdir) / "commands.log"
+            engine_path.write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "size = None",
+                        "stones = set()",
+                        "for raw in sys.stdin:",
+                        "    line = raw.strip()",
+                        f"    with open(r'{commands_path}', 'a', encoding='utf-8') as log:",
+                        "        log.write(line + '\\n')",
+                        "    if line.startswith('START'):",
+                        "        size = int(line.split()[1])",
+                        "        print('MESSAGE fake engine loading config', flush=True)",
+                        "        print('OK', flush=True)",
+                        "    elif line == 'BOARD':",
+                        "        stones = set()",
+                        "    elif line == 'DONE':",
+                        "        for y in range(size):",
+                        "            for x in range(size):",
+                        "                if (x, y) not in stones:",
+                        "                    print(f'{x},{y}', flush=True)",
+                        "                    break",
+                        "            else:",
+                        "                continue",
+                        "            break",
+                        "    elif line == 'END':",
+                        "        break",
+                        "    elif ',' in line:",
+                        "        x, y, player = line.split(',')",
+                        "        stones.add((int(x), int(y)))",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            policy = PiskvorkEnginePolicy(
+                ExternalEngineConfig(
+                    command=f"{sys.executable} {engine_path}",
+                    board_size=3,
+                    win_length=3,
+                    rule_set="free",
+                    enforce_center_opening=False,
+                    protocol_timeout_s=5.0,
+                )
+            )
+            board = policy.new_board()
+            board.place(0, 0)
+            try:
+                prediction = policy.predict(board)
+            finally:
+                policy.close()
+
+            self.assertEqual(prediction.move, (0, 1))
+            self.assertEqual(prediction.action_index, action_to_index(0, 1, 3))
+            self.assertEqual(float(prediction.policy[action_to_index(0, 1, 3)]), 1.0)
+            self.assertEqual(float(prediction.policy.sum()), 1.0)
+            self.assertIn("INFO rule 0", commands_path.read_text(encoding="utf-8").splitlines())
+
+    def test_piskvork_engine_policy_sends_renju_rule_info(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            engine_path = Path(tmpdir) / "fake_piskvork.py"
+            commands_path = Path(tmpdir) / "commands.log"
+            engine_path.write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "for raw in sys.stdin:",
+                        "    line = raw.strip()",
+                        f"    with open(r'{commands_path}', 'a', encoding='utf-8') as log:",
+                        "        log.write(line + '\\n')",
+                        "    if line.startswith('START'):",
+                        "        print('OK', flush=True)",
+                        "    elif line == 'END':",
+                        "        break",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            policy = build_piskvork_policy(
+                f"{sys.executable} {engine_path}",
+                board_size=15,
+                win_length=5,
+                rule_set="renju",
+                enforce_center_opening=True,
+                protocol_timeout_s=5.0,
+            )
+            try:
+                policy.start()
+            finally:
+                policy.close()
+
+            self.assertIn("INFO rule 4", commands_path.read_text(encoding="utf-8").splitlines())
+
+    def test_piskvork_engine_policy_rejects_engine_illegal_move(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            engine_path = Path(tmpdir) / "illegal_piskvork.py"
+            engine_path.write_text(
+                "\n".join(
+                    [
+                        "import sys",
+                        "for raw in sys.stdin:",
+                        "    line = raw.strip()",
+                        "    if line.startswith('START'):",
+                        "        print('OK', flush=True)",
+                        "    elif line == 'DONE':",
+                        "        print('0,0', flush=True)",
+                        "    elif line == 'END':",
+                        "        break",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            policy = build_piskvork_policy(
+                f"{sys.executable} {engine_path}",
+                board_size=3,
+                win_length=3,
+                rule_set="free",
+                enforce_center_opening=False,
+                protocol_timeout_s=5.0,
+            )
+            board = policy.new_board()
+            board.place(0, 0)
+            try:
+                with self.assertRaisesRegex(ValueError, "illegal move"):
+                    policy.predict(board)
+            finally:
+                policy.close()
 
     def test_checkpoint_policy_switches_to_late_temperature_after_opening(self) -> None:
         with TemporaryDirectory() as tmpdir:

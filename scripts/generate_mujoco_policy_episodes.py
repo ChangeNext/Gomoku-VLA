@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import random
 from pathlib import Path
 
+from board import Player
+from gomoku_ai.external_engine import build_piskvork_policy
 from gomoku_ai.inference import CheckpointPolicy
 from simulation import (
     DEFAULT_TRAINING_CAMERAS,
@@ -18,7 +21,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate MuJoCo-rendered policy episodes with scripted pick/place action traces."
     )
-    parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--checkpoint")
+    parser.add_argument(
+        "--engine-command",
+        help="Piskvork/Gomocup engine command, for example a Rapfi executable path. Mutually exclusive with --checkpoint.",
+    )
+    parser.add_argument("--engine-timeout-turn-ms", type=int, default=1000)
+    parser.add_argument("--engine-protocol-timeout-s", type=float, default=5.0)
+    parser.add_argument("--board-size", type=int, default=15)
     parser.add_argument("--output-jsonl")
     parser.add_argument("--assets-dir")
     parser.add_argument("--games", type=int, default=1)
@@ -71,6 +81,23 @@ def main() -> None:
     parser.add_argument("--center-opening", action="store_true")
     parser.add_argument("--no-center-opening", action="store_true")
     parser.add_argument("--max-moves", type=int)
+    parser.add_argument(
+        "--random-prefix-moves",
+        type=int,
+        default=0,
+        help="Play this many random legal setup moves before recording teacher moves, for dataset diversity.",
+    )
+    parser.add_argument(
+        "--random-prefix-seed",
+        type=int,
+        default=0,
+        help="Seed for random legal setup prefixes.",
+    )
+    parser.add_argument(
+        "--skip-failed-games",
+        action="store_true",
+        help="Continue collection when a teacher engine rejects a prefix or returns an unusable move.",
+    )
     parser.add_argument("--policy-source", default="alphazero")
     parser.add_argument("--image-width", type=int, default=DEFAULT_TRAINING_IMAGE_SIZE)
     parser.add_argument("--image-height", type=int, default=DEFAULT_TRAINING_IMAGE_SIZE)
@@ -100,10 +127,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if bool(args.checkpoint) == bool(args.engine_command):
+        parser.error("provide exactly one of --checkpoint or --engine-command")
     if args.games <= 0:
         parser.error("--games must be positive")
+    if args.board_size <= 0:
+        parser.error("--board-size must be positive")
     if args.episode_index_offset < 0:
         parser.error("--episode-index-offset must be non-negative")
+    if args.random_prefix_moves < 0:
+        parser.error("--random-prefix-moves must be non-negative")
     if args.temperature < 0.0:
         parser.error("--temperature must be non-negative")
     if args.late_temperature < 0.0:
@@ -120,9 +153,10 @@ def main() -> None:
         parser.error("--root-exploration-fraction must be between 0 and 1")
     if args.center_opening and args.no_center_opening:
         parser.error("--center-opening and --no-center-opening cannot be used together")
-    checkpoint = Path(args.checkpoint)
-    if not checkpoint.exists():
-        parser.error(f"checkpoint not found: {checkpoint}")
+    if args.engine_timeout_turn_ms <= 0:
+        parser.error("--engine-timeout-turn-ms must be positive")
+    if args.engine_protocol_timeout_s <= 0.0:
+        parser.error("--engine-protocol-timeout-s must be positive")
 
     enforce_center_opening = None
     if args.center_opening:
@@ -130,7 +164,14 @@ def main() -> None:
     if args.no_center_opening:
         enforce_center_opening = False
 
-    output_jsonl = Path(args.output_jsonl) if args.output_jsonl else default_mujoco_episode_output_path(checkpoint)
+    if args.checkpoint:
+        checkpoint = Path(args.checkpoint)
+        if not checkpoint.exists():
+            parser.error(f"checkpoint not found: {checkpoint}")
+        output_jsonl = Path(args.output_jsonl) if args.output_jsonl else default_mujoco_episode_output_path(checkpoint)
+    else:
+        checkpoint = None
+        output_jsonl = Path(args.output_jsonl) if args.output_jsonl else Path("data/external_engine_mujoco_policy_episodes.jsonl")
     assets_dir = Path(args.assets_dir) if args.assets_dir else output_jsonl.parent / "assets"
     cameras = tuple(camera.strip() for camera in args.cameras.split(",") if camera.strip())
     if not cameras:
@@ -144,55 +185,131 @@ def main() -> None:
             "use --allow-low-res-smoke only for pipeline checks"
         )
 
-    policy = CheckpointPolicy(
-        checkpoint,
-        device=args.device,
-        simulations=args.simulations,
-        temperature=args.temperature,
-        temperature_moves=args.temperature_moves,
-        late_temperature=args.late_temperature,
-        sample_moves=args.sample_moves,
-        add_root_noise=args.root_noise,
-        root_dirichlet_alpha=args.root_dirichlet_alpha,
-        root_exploration_fraction=args.root_exploration_fraction,
-        seed=args.seed,
-    )
+    external_policy_config = None
+    if checkpoint is not None:
+        policy = CheckpointPolicy(
+            checkpoint,
+            device=args.device,
+            simulations=args.simulations,
+            temperature=args.temperature,
+            temperature_moves=args.temperature_moves,
+            late_temperature=args.late_temperature,
+            sample_moves=args.sample_moves,
+            add_root_noise=args.root_noise,
+            root_dirichlet_alpha=args.root_dirichlet_alpha,
+            root_exploration_fraction=args.root_exploration_fraction,
+            seed=args.seed,
+        )
+        policy_source = args.policy_source
+        checkpoint_label = str(checkpoint)
+        game_id_prefix = args.game_id_prefix or f"{checkpoint.stem}-mujoco"
+    else:
+        rule_set = args.rule_set or "renju"
+        center_opening = True if enforce_center_opening is None else enforce_center_opening
+        external_policy_config = (
+            args.engine_command,
+            args.board_size,
+            args.win_length or 5,
+            rule_set,
+            center_opening,
+            args.engine_timeout_turn_ms,
+            args.engine_protocol_timeout_s,
+        )
+        policy = _build_external_policy(external_policy_config)
+        policy_source = args.policy_source if args.policy_source != "alphazero" else f"piskvork:{policy.name}"
+        checkpoint_label = None
+        game_id_prefix = args.game_id_prefix or f"{policy.name}-mujoco"
     total_records = 0
-    game_id_prefix = args.game_id_prefix or f"{checkpoint.stem}-mujoco"
-    for game_index in range(args.games):
-        rule_set = args.rule_set or policy.rule_set
-        center_opening = policy.enforce_center_opening if enforce_center_opening is None else enforce_center_opening
-        env = GomokuMujocoEnv(
-            board_size=policy.board_size,
-            win_length=policy.win_length if args.win_length is None else args.win_length,
-            rule_set=rule_set,
-            enforce_center_opening=center_opening,
-            cell_size=args.cell_size,
-            stone_radius=args.stone_radius,
-            show_robot=True,
-            robot_model=args.robot_model,
-        )
-        records = collect_mujoco_policy_episode(
-            env,
-            policy,
-            output_jsonl,
-            assets_dir,
-            game_id=f"{game_id_prefix}-{game_index + 1}",
-            episode_index=args.episode_index_offset + game_index,
-            policy_source=args.policy_source,
-            checkpoint=str(checkpoint),
-            max_moves=args.max_moves,
-            cameras=cameras,
-            image_width=args.image_width,
-            image_height=args.image_height,
-            capture_phase_images=args.capture_phase_images,
-        )
-        total_records += len(records)
+    failed_games = 0
+    prefix_rng = random.Random(args.random_prefix_seed)
+    try:
+        for game_index in range(args.games):
+            if external_policy_config is not None:
+                close = getattr(policy, "close", None)
+                if close is not None:
+                    close()
+                policy = _build_external_policy(external_policy_config)
+            rule_set = args.rule_set or policy.rule_set
+            center_opening = policy.enforce_center_opening if enforce_center_opening is None else enforce_center_opening
+            env = GomokuMujocoEnv(
+                board_size=policy.board_size,
+                win_length=policy.win_length if args.win_length is None else args.win_length,
+                rule_set=rule_set,
+                enforce_center_opening=center_opening,
+                cell_size=args.cell_size,
+                stone_radius=args.stone_radius,
+                show_robot=True,
+                robot_model=args.robot_model,
+            )
+            prefix_count = _apply_random_prefix(env, args.random_prefix_moves, prefix_rng)
+            collection_max_moves = None if args.max_moves is None else env.board.move_count + args.max_moves
+            try:
+                records = collect_mujoco_policy_episode(
+                    env,
+                    policy,
+                    output_jsonl,
+                    assets_dir,
+                    game_id=f"{game_id_prefix}-{game_index + 1}",
+                    episode_index=args.episode_index_offset + game_index,
+                    policy_source=policy_source,
+                    checkpoint=checkpoint_label,
+                    max_moves=collection_max_moves,
+                    cameras=cameras,
+                    image_width=args.image_width,
+                    image_height=args.image_height,
+                    capture_phase_images=args.capture_phase_images,
+                )
+            except (RuntimeError, TimeoutError, ValueError) as exc:
+                if not args.skip_failed_games:
+                    raise
+                failed_games += 1
+                print(
+                    f"skipped game {game_index + 1} after {prefix_count} prefix moves: {exc}",
+                    flush=True,
+                )
+                close = getattr(policy, "close", None)
+                if close is not None:
+                    close()
+                continue
+            total_records += len(records)
+    finally:
+        close = getattr(policy, "close", None)
+        if close is not None:
+            close()
 
     print(
-        f"wrote {total_records} MuJoCo move records from {args.games} games to {output_jsonl}",
+        f"wrote {total_records} MuJoCo move records from {args.games} games to {output_jsonl}; "
+        f"failed_games={failed_games}",
         flush=True,
     )
+
+
+def _build_external_policy(config: tuple[str, int, int, str, bool, int, float]):
+    command, board_size, win_length, rule_set, center_opening, timeout_turn_ms, protocol_timeout_s = config
+    return build_piskvork_policy(
+        command,
+        board_size=board_size,
+        win_length=win_length,
+        rule_set=rule_set,
+        enforce_center_opening=center_opening,
+        timeout_turn_ms=timeout_turn_ms,
+        protocol_timeout_s=protocol_timeout_s,
+    )
+
+
+def _apply_random_prefix(env: GomokuMujocoEnv, moves: int, rng: random.Random) -> int:
+    applied = 0
+    while applied < moves and env.board.winner is None:
+        legal_moves = env.board.legal_moves()
+        if not legal_moves:
+            break
+        move = rng.choice(legal_moves)
+        player = env.board.current_player
+        env.step(move, update_robot_target=False)
+        if player in {Player.BLACK, Player.WHITE}:
+            env.supply_counts[player] = max(0, env.supply_counts[player] - 1)
+        applied += 1
+    return applied
 
 
 if __name__ == "__main__":

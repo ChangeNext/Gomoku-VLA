@@ -7,6 +7,7 @@ import numpy as np
 
 from board import GomokuBoard
 from gomoku_ai.inference import MovePrediction
+from scripts.generate_mujoco_policy_episodes import _apply_random_prefix
 from simulation import GomokuMujocoEnv, collect_mujoco_policy_episode, default_mujoco_episode_output_path
 
 
@@ -97,6 +98,11 @@ class MujocoPolicyCollectionTest(unittest.TestCase):
             self.assertEqual(record["observation"]["supervision"]["execution"]["supply_after"]["black"], 4)
             self.assertEqual(record["observation"]["supervision"]["execution"]["target_cell"], [0, 0])
             self.assertTrue(record["observation"]["state"]["safety"]["ok"])
+            self.assertEqual(record["observation"]["prefix_moves"], 0)
+            self.assertEqual(record["observation"]["board_ply_before"], 0)
+            self.assertEqual(record["observation"]["board_ply_after"], 1)
+            self.assertTrue(record["observation"]["is_first"])
+            self.assertTrue(record["observation"]["is_first_recorded_frame"])
             self.assertEqual(
                 record["observation"]["supervision"]["execution"]["action"]["attachment_mode"],
                 "scripted_held_stone",
@@ -192,6 +198,58 @@ class MujocoPolicyCollectionTest(unittest.TestCase):
             target_sequence = record["observation"]["supervision"]["target_sequence"]
             self.assertEqual(target_sequence["action_tokenization"], "so101_joint_tokens_v1")
             self.assertTrue(target_sequence["action_tokens"][0].startswith("<ACT_SO101_"))
+
+    def test_random_prefix_updates_board_visuals_and_supply(self) -> None:
+        import random
+
+        env = GomokuMujocoEnv(board_size=5, win_length=4, rule_set="free", enforce_center_opening=False)
+
+        applied = _apply_random_prefix(env, 3, random.Random(7))
+
+        self.assertEqual(applied, 3)
+        self.assertEqual(env.board.move_count, 3)
+        self.assertEqual(env.supply_counts[env.board.current_player.opponent], 11)
+        self.assertEqual(env.supply_counts[env.board.current_player], 11)
+        occupied = [
+            (row, col)
+            for row in range(env.board.size)
+            for col in range(env.board.size)
+            if env.board.grid[row][col] != 0
+        ]
+        for row, col in occupied:
+            geom_id = env.model.geom(f"stone_{row}_{col}").id
+            self.assertGreater(float(env.model.geom_rgba[geom_id][3]), 0.0)
+
+    def test_prefix_collection_marks_recorded_frame_separately_from_game_first_move(self) -> None:
+        import random
+
+        with TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "episodes.jsonl"
+            assets = Path(tmpdir) / "assets"
+            env = GomokuMujocoEnv(board_size=5, win_length=4, rule_set="free", enforce_center_opening=False)
+
+            applied = _apply_random_prefix(env, 3, random.Random(11))
+            records = collect_mujoco_policy_episode(
+                env,
+                FirstLegalPredictor(),
+                output,
+                assets,
+                game_id="prefixed-game",
+                max_moves=env.board.move_count + 1,
+                cameras=("top",),
+                image_width=96,
+                image_height=96,
+            )
+
+            self.assertEqual(applied, 3)
+            self.assertEqual(len(records), 1)
+            record = json.loads(output.read_text(encoding="utf-8").strip())
+            observation = record["observation"]
+            self.assertEqual(observation["prefix_moves"], 3)
+            self.assertEqual(observation["board_ply_before"], 3)
+            self.assertEqual(observation["board_ply_after"], 4)
+            self.assertFalse(observation["is_first"])
+            self.assertTrue(observation["is_first_recorded_frame"])
 
 
 if __name__ == "__main__":

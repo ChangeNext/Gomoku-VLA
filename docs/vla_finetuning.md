@@ -26,7 +26,8 @@ Supervision labels:
 
 ## Autoregressive OpenVLA Fine-tuning Recipe
 
-1. Generate strategic demonstrations with AlphaZero/MCTS:
+1. Generate strategic demonstrations with AlphaZero/MCTS or an external
+   Piskvork engine such as Rapfi/Embryo:
    `board_before -> selected_move/policy_probs/value`.
 2. Add discrete move tokens:
    `<MOVE_0>` through `<MOVE_224>` for the 15x15 board cells.
@@ -107,6 +108,73 @@ The included lightweight loader is `gomoku_ai.openvla_oft_dataset.OpenVLAOFTMani
 - `input.images` to the model's multi-image preprocessing path,
 - `target.text` to the autoregressive tokenizer,
 - `target.action.sequence` to the SO-101 action tokenizer or continuous action head.
+
+For an external-engine smoke path, first collect MuJoCo records with
+`scripts.generate_mujoco_policy_episodes --engine-command ...`, then export and
+prepare the training package:
+
+```bash
+python -m scripts.export_openvla_oft_dataset \
+  --input-jsonl data/rapfi_mujoco/episodes.jsonl \
+  --output-dir data/rapfi_mujoco/openvla_oft
+
+python -m scripts.split_openvla_manifest \
+  --manifest data/rapfi_mujoco/openvla_oft/manifest.jsonl \
+  --train-ratio 0.8 \
+  --val-ratio 0.1 \
+  --test-ratio 0.1 \
+  --seed 20260719
+
+python -m scripts.prepare_openvla_finetuning \
+  --manifest data/rapfi_mujoco/openvla_oft/manifest_train.jsonl \
+  --output-dir data/rapfi_mujoco/openvla_oft_prep \
+  --base-model openvla/openvla-7b \
+  --stage move_only
+```
+
+The split command groups by `source.game_id`, not by individual rows. This
+keeps adjacent positions from the same game out of multiple splits and avoids
+overstating validation or test accuracy. Use `manifest_train.jsonl` for
+fine-tuning, `manifest_val.jsonl` for model selection, and keep
+`manifest_test.jsonl` untouched for final reporting.
+
+This repository still prepares a trainer-neutral OpenVLA/OFT package; it does
+not download OpenVLA weights or launch a multi-GPU fine-tuning job locally.
+
+## Local Smoke Fine-tuning
+
+For a small local integration check, use the manifest trainer:
+
+```bash
+python -m scripts.train_openvla_manifest \
+  --manifest data/rapfi_collection_2026-07-19_10-30-17_v2/openvla_oft/manifest_train.jsonl \
+  --eval-manifest data/rapfi_collection_2026-07-19_10-30-17_v2/openvla_oft/manifest_val.jsonl \
+  --prep-dir data/rapfi_collection_2026-07-19_10-30-17_v2/openvla_oft_prep \
+  --output-dir data/rapfi_collection_2026-07-19_10-30-17_v2/openvla_move_only_smoke \
+  --base-model openvla/openvla-7b \
+  --stage move_only \
+  --max-steps 1 \
+  --batch-size 1 \
+  --lora-rank 4
+```
+
+This uses the HuggingFace OpenVLA model with LoRA and trains only the
+autoregressive move-token target from the custom manifest. It is a smoke test
+for the custom data path, not a useful policy run; the Rapfi collection above
+contains only a few samples.
+
+If `--use-4bit` fails with a bitsandbytes `.to is not supported for 4-bit`
+error, check the active Python environment before training:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.device_count())"
+python -m bitsandbytes
+```
+
+4-bit LoRA requires both PyTorch CUDA and a CUDA-enabled bitsandbytes library.
+If bitsandbytes loads `libbitsandbytes_cpu.so`, reinstall or fix that
+environment before using `--use-4bit`; otherwise rerun the smoke path without
+`--use-4bit` on a GPU with enough memory.
 
 ## GPU Training Preparation
 

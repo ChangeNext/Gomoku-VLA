@@ -584,7 +584,7 @@ def train_epoch_metrics(
     policy_target_entropies: list[float] = []
     network.train()
     amp_enabled = use_amp and device.type == "cuda"
-    scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
+    scaler = torch.cuda.amp.GradScaler(enabled=True) if amp_enabled else None
     total_steps = epochs * batches_per_epoch
     training_bar = trange(
         total_steps,
@@ -604,12 +604,18 @@ def train_epoch_metrics(
             policy_logits, values = network(states)
             policy_loss, value_loss = policy_value_loss_components(policy_logits, values, policy_targets, value_targets)
             loss = policy_loss + value_loss
-        scaler.scale(loss).backward()
-        if gradient_clip_norm > 0:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(network.parameters(), gradient_clip_norm)
-        scaler.step(optimizer)
-        scaler.update()
+        if scaler is None:
+            loss.backward()
+            if gradient_clip_norm > 0:
+                torch.nn.utils.clip_grad_norm_(network.parameters(), gradient_clip_norm)
+            optimizer.step()
+        else:
+            scaler.scale(loss).backward()
+            if gradient_clip_norm > 0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(network.parameters(), gradient_clip_norm)
+            scaler.step(optimizer)
+            scaler.update()
         losses.append(float(loss.item()))
         policy_losses.append(float(policy_loss.item()))
         value_losses.append(float(value_loss.item()))

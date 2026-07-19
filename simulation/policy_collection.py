@@ -67,9 +67,11 @@ def collect_mujoco_policy_episode(
     episode_asset_dir.mkdir(parents=True, exist_ok=True)
     records: list[EpisodeStepRecord] = []
     safety = RobotSafetyController(env)
+    initial_move_count = env.board.move_count
 
     while env.board.winner is None and env.board.move_count < max_steps:
         step = len(records)
+        board_ply_before = env.board.move_count
         board_before = env.board.copy_state()
         player = env.board.current_player
         supply_before = _supply_counts(env)
@@ -179,7 +181,11 @@ def collect_mujoco_policy_episode(
             qa_contact_sheet=qa_contact_sheet,
             episode_index=episode_index,
             frame_index=step,
-            is_first=step == 0,
+            prefix_moves=initial_move_count,
+            board_ply_before=board_ply_before,
+            board_ply_after=env.board.move_count,
+            is_first=board_ply_before == 0,
+            is_first_recorded_frame=step == 0,
             is_last=will_stop,
             is_terminal=env.board.winner is not None or not legal or not safe_to_execute or execution_failed,
         )
@@ -553,7 +559,11 @@ def _build_observation(
     qa_contact_sheet: str | None,
     episode_index: int,
     frame_index: int,
+    prefix_moves: int,
+    board_ply_before: int,
+    board_ply_after: int,
     is_first: bool,
+    is_first_recorded_frame: bool,
     is_last: bool,
     is_terminal: bool,
 ) -> dict[str, object]:
@@ -623,8 +633,12 @@ def _build_observation(
         },
         "episode_index": episode_index,
         "frame_index": frame_index,
+        "prefix_moves": prefix_moves,
+        "board_ply_before": board_ply_before,
+        "board_ply_after": board_ply_after,
         "timestamp_s": frame_index,
         "is_first": is_first,
+        "is_first_recorded_frame": is_first_recorded_frame,
         "is_last": is_last,
         "is_terminal": is_terminal,
     }
